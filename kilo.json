@@ -1,0 +1,17 @@
+{
+  "$schema": "https://app.kilo.ai/config.json",
+  "mcp": {
+    "openclaw-interceptor": {
+      "type": "local",
+      "command": [
+        "node",
+        "./mcp-server/src/index.js"
+      ],
+      "enabled": true,
+      "timeout": 30000
+    }
+  },
+  "instructions": [
+    "AGENTS.md"
+  ]
+}
