@@ -3,17 +3,27 @@
 <head>
   <style>
     body { width: 280px; padding: 10px; font-family: Arial, sans-serif; }
+    .header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+    h4 { margin: 0; }
     input { width: 100%; box-sizing: border-box; margin-bottom: 10px; padding: 5px; }
-    button { width: 100%; padding: 8px; background-color: #ff4500; color: white; border: none; cursor: pointer; font-weight: bold; }
+    button { width: 100%; padding: 8px; background-color: #ff4500; color: white; border: none; cursor: pointer; font-weight: bold; border-radius: 4px; }
     button:hover { background-color: #cc3700; }
+    
+    #toggleBtn { width: auto; padding: 5px 15px; background-color: #4CAF50; border-radius: 20px; transition: 0.3s; }
+    #toggleBtn.off { background-color: #f44336; }
   </style>
 </head>
 <body>
-  <h4>OpenClaw MCP Relay</h4>
-  <label for="webhookUrl">Remote VM Webhook URL:</label>
+  <div class="header-row">
+    <h4>Network Relay</h4>
+    <button id="toggleBtn">ON</button>
+  </div>
+  
+  <label for="webhookUrl" style="font-size: 13px;">Remote VM Webhook URL:</label>
   <input type="text" id="webhookUrl" placeholder="https://your-ngrok-url.app/log" />
-  <button id="saveBtn">Save & Connect</button>
+  <button id="saveBtn">Save URL</button>
   <p id="status" style="color: green; font-size: 12px; text-align: center; margin-top: 10px;"></p>
+  
   <script src="popup.js"></script>
 </body>
 </html>
