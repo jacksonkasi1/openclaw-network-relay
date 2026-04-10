@@ -6,7 +6,7 @@
   "main": "src/index.js",
   "scripts": {
     "start": "bun run src/index.js",
-    "check": "bun run src/index.js --check"
+    "check": "bun --check src/index.js src/db.js src/http.js src/mcp.js src/state.js"
   },
   "keywords": [],
   "author": "",

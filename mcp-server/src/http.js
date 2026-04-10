@@ -17,7 +17,7 @@ function fallbackDecisionForPhase(phase) {
 export function startHttpServer(port = 31337) {
   const app = express();
 
-  app.use(cors());
+  app.use(cors({ origin: ['http://127.0.0.1:31337', 'http://localhost:31337'] }));
   app.use(express.json({ limit: '50mb' }));
   app.use(express.static(publicPath)); // Serve the web dashboard
 
@@ -85,7 +85,7 @@ export function startHttpServer(port = 31337) {
       });
   });
 
-  app.listen(port, () => {
+  app.listen(port, '127.0.0.1', () => {
     console.error(`[HTTP] OpenClaw Dashboard and MCP bridge listening on http://127.0.0.1:${port}`);
   });
 }

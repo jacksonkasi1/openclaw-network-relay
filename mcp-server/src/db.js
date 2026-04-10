@@ -48,10 +48,14 @@ db.exec(`CREATE INDEX IF NOT EXISTS idx_rules_active ON rules(isActive);`);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_traffic_timestamp ON traffic_logs(timestamp);`);
 
 function parseRule(r) {
+  let modHeaders, modResHeaders;
+  try { modHeaders = r.modifiedHeaders ? JSON.parse(r.modifiedHeaders) : undefined; } catch(e) {}
+  try { modResHeaders = r.modifiedResponseHeaders ? JSON.parse(r.modifiedResponseHeaders) : undefined; } catch(e) {}
+  
   return {
     ...r,
-    modifiedHeaders: r.modifiedHeaders ? JSON.parse(r.modifiedHeaders) : undefined,
-    modifiedResponseHeaders: r.modifiedResponseHeaders ? JSON.parse(r.modifiedResponseHeaders) : undefined,
+    modifiedHeaders: modHeaders,
+    modifiedResponseHeaders: modResHeaders,
     isActive: !!r.isActive
   };
 }
@@ -105,7 +109,7 @@ export function addRule(rule) {
     rule.modifiedResponseBody,
     1, Date.now()
   );
-  return { id, ...rule };
+  return { ...rule, id };
 }
 
 export function updateRuleState(id, isActive) {
@@ -117,6 +121,7 @@ export function removeRule(id) {
   return res.changes > 0;
 }
 
+let logInsertCounter = 0;
 // Traffic log functions
 export function addTrafficLog(data) {
   insertLogStmt.run(
@@ -134,14 +139,16 @@ export function addTrafficLog(data) {
     Date.now()
   );
   
-  // Auto-prune old logs to prevent DB bloat (keeps last 2000)
-  if (Math.random() < 0.05) {
+  // Deterministic prune old logs to prevent DB bloat
+  logInsertCounter++;
+  if (logInsertCounter % 50 === 0) {
     cleanupLogsStmt.run();
   }
 }
 
 export function getTrafficLogs(limit = 100) {
-  return db.query("SELECT * FROM traffic_logs ORDER BY timestamp DESC LIMIT ?").all(limit).map(parseLog);
+  const clampedLimit = Math.max(1, Math.min(1000, Number(limit) || 100));
+  return db.query("SELECT * FROM traffic_logs ORDER BY timestamp DESC LIMIT ?").all(clampedLimit).map(parseLog);
 }
 
 export function organizeLogIntoFolder(id, folder) {

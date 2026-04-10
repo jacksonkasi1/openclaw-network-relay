@@ -7,19 +7,19 @@ import { getTrafficLogs, getAllRules, addRule, removeRule, organizeLogIntoFolder
 function serializeIntercept(intercept) {
   return {
     id: intercept.id,
-    phase: intercept.data?.phase || intercept.phase,
-    tabId: intercept.data?.tabId || intercept.tabId,
-    resourceType: intercept.data?.resourceType || intercept.resourceType,
-    url: intercept.data?.url || intercept.url,
-    method: intercept.data?.method || intercept.method,
-    requestHeaders: intercept.data?.requestHeaders || intercept.requestHeaders,
-    requestBody: intercept.data?.requestBody || intercept.requestBody,
-    responseStatusCode: intercept.data?.responseStatusCode || intercept.responseStatusCode,
-    responseStatusText: intercept.data?.responseStatusText || intercept.responseStatusText,
-    responseHeaders: intercept.data?.responseHeaders || intercept.responseHeaders,
-    responseBody: intercept.data?.responseBody || intercept.responseBody,
-    createdAt: new Date(intercept.createdAt || intercept.timestamp).toISOString(),
-    folder: intercept.data?.folder || intercept.folder
+    phase: intercept.data?.phase ?? intercept.phase,
+    tabId: intercept.data?.tabId ?? intercept.tabId,
+    resourceType: intercept.data?.resourceType ?? intercept.resourceType,
+    url: intercept.data?.url ?? intercept.url,
+    method: intercept.data?.method ?? intercept.method,
+    requestHeaders: intercept.data?.requestHeaders ?? intercept.requestHeaders,
+    requestBody: intercept.data?.requestBody ?? intercept.requestBody,
+    responseStatusCode: intercept.data?.responseStatusCode ?? intercept.responseStatusCode,
+    responseStatusText: intercept.data?.responseStatusText ?? intercept.responseStatusText,
+    responseHeaders: intercept.data?.responseHeaders ?? intercept.responseHeaders,
+    responseBody: intercept.data?.responseBody ?? intercept.responseBody,
+    createdAt: new Date(intercept.createdAt ?? intercept.timestamp).toISOString(),
+    folder: intercept.data?.folder ?? intercept.folder
   };
 }
 
@@ -192,8 +192,10 @@ export function startMcpServer() {
 
     if (request.params.name === "get_traffic_history") {
       const args = request.params.arguments || {};
-      const limit = args.limit ? Math.min(args.limit, 100) : 50;
-      let history = getTrafficLogs(limit).map(serializeIntercept);
+      const limit = args.limit ? Math.max(1, Math.min(args.limit, 100)) : 50;
+      
+      // Fetch more initially so we can filter properly before limiting
+      let history = getTrafficLogs(1000).map(serializeIntercept);
       
       if (args.log_id) {
         history = history.filter(h => h.id === args.log_id);
@@ -202,10 +204,10 @@ export function startMcpServer() {
           history = history.filter(h => h.folder === args.folder);
         }
         if (args.url_filter) {
-          history = history.filter(h => h.url.includes(args.url_filter));
+          history = history.filter(h => h.url && h.url.includes(args.url_filter));
         }
         if (args.method_filter) {
-          history = history.filter(h => h.method.toUpperCase() === args.method_filter.toUpperCase());
+          history = history.filter(h => h.method && h.method.toUpperCase() === args.method_filter.toUpperCase());
         }
         if (args.light_mode) {
           history = history.map(h => ({
@@ -215,6 +217,9 @@ export function startMcpServer() {
           }));
         }
       }
+      
+      // Slice after filtering
+      history = history.slice(0, limit);
 
       if (history.length === 0) {
         return { content: [{ type: "text", text: "No traffic history available matching filters." }] };
@@ -256,7 +261,17 @@ export function startMcpServer() {
           options.body = typeof body === "string" ? body : JSON.stringify(body);
         }
 
-        const response = await fetch(url, options);
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000);
+        options.signal = controller.signal;
+        
+        let response;
+        try {
+          response = await fetch(url, options);
+        } finally {
+          clearTimeout(timeoutId);
+        }
+        
         let responseText;
         const contentType = response.headers.get("content-type") || "";
         

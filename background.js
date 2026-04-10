@@ -29,6 +29,11 @@ function normalizeEndpoint(value) {
   return trimmed || DEFAULT_ENDPOINT;
 }
 
+
+function stripEntityHeaders(headers = []) {
+  return headers.filter(h => !/^(content-length|content-encoding|transfer-encoding)$/i.test(h.name));
+}
+
 function headerObjectToArray(headers = {}) {
   return Object.entries(headers).map(([name, value]) => ({
     name,
@@ -342,7 +347,11 @@ async function handleResponsePause(tabId, params) {
     responseBodyBase64 = bodyResult.base64Encoded ? bodyResult.body : encodeUtf8ToBase64(bodyResult.body);
     responseBodyEncoded = bodyResult.base64Encoded;
     if (bodyResult.base64Encoded) {
-      try { responseBody = atob(bodyResult.body); } catch(e) { responseBody = bodyResult.body; }
+      try {
+        const binary = atob(bodyResult.body);
+        const bytes = Uint8Array.from(binary, c => c.charCodeAt(0));
+        responseBody = new TextDecoder("utf-8").decode(bytes);
+      } catch(e) { responseBody = bodyResult.body; }
     }
   } catch {
     responseBody = null;
@@ -378,7 +387,10 @@ async function handleResponsePause(tabId, params) {
       return;
     }
     if (matchedRule.action === "modify") {
-      const responseHeaders = matchedRule.modifiedResponseHeaders ? headerObjectToArray(matchedRule.modifiedResponseHeaders) : (params.responseHeaders || []);
+      let responseHeaders = matchedRule.modifiedResponseHeaders ? headerObjectToArray(matchedRule.modifiedResponseHeaders) : [...(params.responseHeaders || [])];
+      if (matchedRule.modifiedResponseBody != null && !matchedRule.modifiedResponseHeaders) {
+        responseHeaders = stripEntityHeaders(responseHeaders);
+      }
       const responseBodyForFulfill = matchedRule.modifiedResponseBody != null ? encodeUtf8ToBase64(matchedRule.modifiedResponseBody) : responseBodyBase64;
       await sendCommand(tabId, "Fetch.fulfillRequest", {
         requestId: params.requestId,
@@ -409,9 +421,13 @@ async function handleResponsePause(tabId, params) {
   }
 
   if (decision.action === "modify") {
-    const responseHeaders = decision.modifiedResponseHeaders
+    let responseHeaders = decision.modifiedResponseHeaders
       ? headerObjectToArray(decision.modifiedResponseHeaders)
-      : (params.responseHeaders || []);
+      : [...(params.responseHeaders || [])];
+
+    if (decision.modifiedResponseBody != null && !decision.modifiedResponseHeaders) {
+      responseHeaders = stripEntityHeaders(responseHeaders);
+    }
 
     const responseBodyForFulfill = decision.modifiedResponseBody != null
       ? encodeUtf8ToBase64(decision.modifiedResponseBody)
@@ -491,6 +507,7 @@ chrome.debugger.onEvent.addListener((source, method, params) => {
 
 chrome.debugger.onDetach.addListener((source) => {
   if (source.tabId === state.attachedTabId) {
+    stopRuleSync();
     state.enabled = false;
     state.attachedTabId = null;
     persistState();
@@ -499,6 +516,7 @@ chrome.debugger.onDetach.addListener((source) => {
 
 chrome.tabs.onRemoved.addListener((tabId) => {
   if (tabId === state.attachedTabId) {
+    stopRuleSync();
     state.enabled = false;
     state.attachedTabId = null;
     persistState();

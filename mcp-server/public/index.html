@@ -97,7 +97,16 @@
 
     async function fetchData(url) {
       const res = await fetch(url);
+      if (!res.ok) throw new Error(`${url} failed: ${res.status} ${res.statusText}`);
       return res.json();
+    }
+
+    function renderLoadError(message) {
+      const logsContainer = document.getElementById("logsContainer");
+      const rulesContainer = document.getElementById("rulesContainer");
+      const safe = escapeHTML(message || "Failed to refresh dashboard data.");
+      logsContainer.innerHTML = `<p style="color:#f48771;">${safe}</p>`;
+      rulesContainer.innerHTML = `<p style="color:#f48771;">${safe}</p>`;
     }
 
     function switchTab(event, tabId) {
@@ -165,10 +174,10 @@
             </div>
             <div style="display:flex; gap:10px; align-items:center;">
               <label class="switch">
-                <input type="checkbox" ${rule.isActive ? 'checked' : ''} onchange="toggleRule('${escapeHTML(rule.id)}', this.checked)">
+                <input type="checkbox" class="rule-toggle" data-rule-id="${escapeHTML(rule.id)}" ${rule.isActive ? 'checked' : ''}>
                 <span class="slider"></span>
               </label>
-              <button class="btn-danger" onclick="deleteRule('${escapeHTML(rule.id)}')">Delete</button>
+              <button class="btn-danger rule-delete" data-rule-id="${escapeHTML(rule.id)}">Delete</button>
             </div>
           </div>
           <div style="font-size:13px;">
@@ -178,6 +187,10 @@
           </div>
         `;
         container.appendChild(card);
+        const toggle = card.querySelector('.rule-toggle');
+        toggle.addEventListener('change', (e) => toggleRule(rule.id, e.target.checked));
+        const delBtn = card.querySelector('.rule-delete');
+        delBtn.addEventListener('click', () => deleteRule(rule.id));
       });
     }
 
@@ -218,9 +231,10 @@
     }
 
     function updateFolders(rules, logs) {
-      const folders = new Set(['All']);
-      rules.forEach(r => folders.add(r.folder));
-      logs.forEach(l => folders.add(l.folder));
+      const folders = new Set(['All', 'Inbox', 'Uncategorized']);
+      rules.forEach(r => folders.add(r.folder || 'Uncategorized'));
+      logs.forEach(l => folders.add(l.folder || 'Inbox'));
+      if (!folders.has(currentFolder)) currentFolder = 'All';
       
       const list = document.getElementById('folderList');
       list.innerHTML = '';
@@ -252,9 +266,22 @@
       renderLogs(logs);
     }
 
+    let isSyncing = false;
+    async function loadDataSafe() {
+      if (isSyncing) return;
+      isSyncing = true;
+      try {
+        await loadData();
+      } catch (err) {
+        renderLoadError(err?.message);
+      } finally {
+        isSyncing = false;
+      }
+    }
+
     // Auto-refresh every 3 seconds
-    setInterval(loadData, 3000);
-    loadData();
+    setInterval(loadDataSafe, 3000);
+    loadDataSafe();
   </script>
 </body>
 </html>
