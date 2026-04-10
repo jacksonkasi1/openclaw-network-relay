@@ -6,6 +6,8 @@ import { createPendingIntercept, dropPendingIntercept, markTimedOut } from './st
 import { getActiveRules, getAllRules, addTrafficLog, getTrafficLogs, updateRuleState, removeRule, clearAllTrafficLogs, clearAllRules } from './db.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const publicPath = path.resolve(__dirname, '../public');
+
 const DEFAULT_TIMEOUT_MS = 20000;
 
 function fallbackDecisionForPhase(phase) {
@@ -17,7 +19,7 @@ export function startHttpServer(port = 31337) {
 
   app.use(cors());
   app.use(express.json({ limit: '50mb' }));
-  app.use(express.static(path.join(__dirname, '../public'))); // Serve the web dashboard
+  app.use(express.static(publicPath)); // Serve the web dashboard
 
   // Health and Rule sync endpoints for the Chrome Extension
   app.get('/health', (_req, res) => res.json({ ok: true }));
