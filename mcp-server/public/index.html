@@ -366,15 +366,23 @@
         const data = await res.json();
         const toggle = document.getElementById('sseToggle');
         const status = document.getElementById('sseStatus');
+        
         toggle.checked = data.sseEnabled;
-        status.textContent = data.sseEnabled ? 'Enabled (Tunnel Active)' : 'Disabled';
-        status.style.color = data.sseEnabled ? '#89d185' : '#858585';
+        toggle.disabled = false;
+        
+        if (data.sseEnabled) {
+           status.textContent = data.publicUrl ? 'Enabled (Cloudflare Active)' : 'Starting Tunnel...';
+           status.style.color = data.publicUrl ? '#89d185' : '#d7ba7d';
+        } else {
+           status.textContent = 'Disabled';
+           status.style.color = '#858585';
+        }
         
         const urlContainer = document.getElementById('sseUrlContainer');
         const urlText = document.getElementById('sseUrlText');
-        if (data.sseEnabled) {
+        if (data.sseEnabled && data.publicUrl) {
           urlContainer.style.display = 'flex';
-          urlText.textContent = window.location.origin + '/sse';
+          urlText.textContent = data.publicUrl + '/sse';
         } else {
           urlContainer.style.display = 'none';
         }
@@ -382,6 +390,14 @@
     }
 
     async function toggleSse(enabled) {
+      const toggle = document.getElementById('sseToggle');
+      const status = document.getElementById('sseStatus');
+      toggle.disabled = true;
+      if (enabled) {
+         status.textContent = 'Starting Cloudflare tunnel...';
+         status.style.color = '#d7ba7d';
+      }
+      
       await fetch('/api/settings/sse', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

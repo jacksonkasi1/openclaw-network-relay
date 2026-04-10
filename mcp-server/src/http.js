@@ -1,5 +1,6 @@
 import express from 'express';
 import cors from 'cors';
+import { startTunnel } from 'untun';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { createPendingIntercept, dropPendingIntercept, markTimedOut } from './state.js';
@@ -24,10 +25,34 @@ export function createHttpApp() {
   app.use(express.static(publicPath)); // Serve the web dashboard
 
   // SSE Remote AI Settings
-  app.get('/api/settings', (_req, res) => res.json({ sseEnabled: global.sseEnabled }));
-  app.post('/api/settings/sse', (req, res) => {
+  app.get('/api/settings', (_req, res) => {
+    res.json({ sseEnabled: global.sseEnabled, publicUrl: global.publicUrl });
+  });
+
+  app.post('/api/settings/sse', async (req, res) => {
     global.sseEnabled = !!req.body.enabled;
-    res.json({ ok: true, sseEnabled: global.sseEnabled });
+    
+    if (global.sseEnabled && !global.publicUrl) {
+      try {
+        console.error("[HTTP] Starting Cloudflare tunnel...");
+        global.tunnel = await startTunnel({ port: 31337 });
+        if (global.tunnel) {
+          global.publicUrl = await global.tunnel.getURL();
+          console.error(`[HTTP] Tunnel active: ${global.publicUrl}`);
+        }
+      } catch (e) {
+        console.error("[HTTP] Tunnel failed:", e.message);
+      }
+    } else if (!global.sseEnabled && global.tunnel) {
+      try {
+        await global.tunnel.close();
+        global.tunnel = null;
+        global.publicUrl = null;
+        console.error("[HTTP] Tunnel closed.");
+      } catch (e) {}
+    }
+    
+    res.json({ ok: true, sseEnabled: global.sseEnabled, publicUrl: global.publicUrl });
   });
 
   // Health and Rule sync endpoints for the Chrome Extension
