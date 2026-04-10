@@ -7,6 +7,8 @@ const state = {
   enabled: false,
   mode: "listen",
   attachedTabId: null,
+  rules: [],
+  ruleSyncInterval: null
 };
 
 function targetForTab(tabId) {
@@ -61,6 +63,39 @@ async function sendCommand(tabId, method, params = {}) {
   return chrome.debugger.sendCommand(targetForTab(tabId), method, params);
 }
 
+async function syncRules() {
+  if (!isSecureEndpoint(state.endpoint)) return;
+  try {
+    const rulesUrl = new URL(state.endpoint);
+    rulesUrl.pathname = '/rules';
+    const res = await fetch(rulesUrl.href);
+    if (res.ok) state.rules = await res.json();
+  } catch (e) {}
+}
+
+function startRuleSync() {
+  if (state.ruleSyncInterval) clearInterval(state.ruleSyncInterval);
+  syncRules();
+  state.ruleSyncInterval = setInterval(syncRules, 2000);
+}
+
+function stopRuleSync() {
+  if (state.ruleSyncInterval) clearInterval(state.ruleSyncInterval);
+  state.ruleSyncInterval = null;
+  state.rules = [];
+}
+
+function evaluateRules(payload, phase) {
+  if (!state.rules || state.rules.length === 0) return null;
+  for (const rule of state.rules) {
+    if (rule.phase && rule.phase !== phase && rule.phase !== 'both') continue;
+    if (rule.method && rule.method.toUpperCase() !== payload.method.toUpperCase()) continue;
+    if (rule.urlPattern && !payload.url.includes(rule.urlPattern)) continue;
+    return rule;
+  }
+  return null;
+}
+
 async function persistState() {
   await chrome.storage.local.set({
     webhookUrl: state.endpoint,
@@ -84,6 +119,7 @@ async function detachFromTab(tabId) {
   if (state.attachedTabId === tabId) {
     state.attachedTabId = null;
   }
+  stopRuleSync();
 }
 
 async function attachToTab(tabId) {
@@ -115,6 +151,7 @@ async function attachToTab(tabId) {
   });
 
   state.attachedTabId = tabId;
+  startRuleSync();
 }
 
 async function loadSettings() {
@@ -237,6 +274,29 @@ async function handleRequestPause(tabId, params) {
     timestamp: Date.now(),
   };
 
+  const matchedRule = evaluateRules(payload, "request");
+  if (matchedRule) {
+    payload.appliedRule = matchedRule.name || matchedRule.id;
+    fireAndForgetLog(payload);
+
+    if (matchedRule.action === "drop") {
+      await sendCommand(tabId, "Fetch.failRequest", { requestId: params.requestId, errorReason: "BlockedByClient" });
+      return;
+    }
+    if (matchedRule.action === "modify") {
+      await sendCommand(tabId, "Fetch.continueRequest", {
+        requestId: params.requestId,
+        url: matchedRule.modifiedUrl,
+        method: matchedRule.modifiedMethod,
+        postData: matchedRule.modifiedBody != null ? encodeUtf8ToBase64(matchedRule.modifiedBody) : undefined,
+        headers: matchedRule.modifiedHeaders ? headerObjectToArray(matchedRule.modifiedHeaders) : undefined,
+      });
+      return;
+    }
+    await sendCommand(tabId, "Fetch.continueRequest", { requestId: params.requestId });
+    return;
+  }
+
   if (state.mode === "listen") {
     fireAndForgetLog(payload);
     await sendCommand(tabId, "Fetch.continueRequest", { requestId: params.requestId });
@@ -300,6 +360,30 @@ async function handleResponsePause(tabId, params) {
     responseBodyIsBase64: responseBodyEncoded,
     timestamp: Date.now(),
   };
+
+  const matchedRule = evaluateRules(payload, "response");
+  if (matchedRule) {
+    payload.appliedRule = matchedRule.name || matchedRule.id;
+    fireAndForgetLog(payload);
+
+    if (matchedRule.action === "drop") {
+      await sendCommand(tabId, "Fetch.failRequest", { requestId: params.requestId, errorReason: "BlockedByClient" });
+      return;
+    }
+    if (matchedRule.action === "modify") {
+      const responseHeaders = matchedRule.modifiedResponseHeaders ? headerObjectToArray(matchedRule.modifiedResponseHeaders) : (params.responseHeaders || []);
+      const responseBodyForFulfill = matchedRule.modifiedResponseBody != null ? encodeUtf8ToBase64(matchedRule.modifiedResponseBody) : responseBodyBase64;
+      await sendCommand(tabId, "Fetch.fulfillRequest", {
+        requestId: params.requestId,
+        responseCode: matchedRule.modifiedStatusCode || params.responseStatusCode || 200,
+        responseHeaders,
+        body: responseBodyForFulfill || "",
+      });
+      return;
+    }
+    await continueResponse(tabId, params.requestId, params, responseBodyBase64);
+    return;
+  }
 
   if (state.mode === "listen") {
     fireAndForgetLog(payload);

@@ -1,7 +1,7 @@
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
-import { getPendingIntercept, listPendingIntercepts, resolvePendingIntercept, getTrafficHistory } from './state.js';
+import { getPendingIntercept, listPendingIntercepts, resolvePendingIntercept, getTrafficHistory, getRules, addRule, removeRule, clearRules } from './state.js';
 
 function serializeIntercept(intercept) {
   return {
@@ -43,6 +43,38 @@ export function startMcpServer() {
   server.setRequestHandler(ListToolsRequestSchema, async () => {
     return {
       tools: [
+        {
+          name: "add_rule",
+          description: "Deploy a Zero-Latency Interception Rule. Pushes a rule to the browser extension that executes instantly without pausing the browser. Use this to auto-mock endpoints or bypass paywalls.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              name: { type: "string", description: "Readable name for this rule" },
+              urlPattern: { type: "string", description: "Substring match for the URL (e.g. '/api/checkout')" },
+              method: { type: "string", description: "HTTP method to match (e.g. 'POST', 'GET'). Optional." },
+              phase: { type: "string", enum: ["request", "response", "both"], description: "Which phase this rule applies to" },
+              action: { type: "string", enum: ["modify", "drop", "forward"], description: "What to do instantly when matched" },
+              modifiedMethod: { type: "string" },
+              modifiedUrl: { type: "string" },
+              modifiedHeaders: { type: "object" },
+              modifiedBody: { type: "string" },
+              modifiedStatusCode: { type: "number" },
+              modifiedResponseHeaders: { type: "object" },
+              modifiedResponseBody: { type: "string" }
+            },
+            required: ["name", "urlPattern", "phase", "action"]
+          }
+        },
+        {
+          name: "list_rules",
+          description: "List all currently deployed Zero-Latency rules.",
+          inputSchema: { type: "object", properties: {} }
+        },
+        {
+          name: "remove_rule",
+          description: "Remove a specific deployed rule by its ID.",
+          inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] }
+        },
         {
           name: "get_pending_requests",
           description: "List all currently paused browser intercepts. Includes request-phase and response-phase events.",
@@ -96,6 +128,25 @@ export function startMcpServer() {
   });
 
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
+
+    if (request.params.name === "add_rule") {
+      const args = request.params.arguments || {};
+      const rule = addRule(args);
+      return { content: [{ type: "text", text: `Successfully deployed rule: ${rule.name} (ID: ${rule.id})` }] };
+    }
+
+    if (request.params.name === "list_rules") {
+      const rules = getRules();
+      if (rules.length === 0) return { content: [{ type: "text", text: "No rules currently deployed." }] };
+      return { content: [{ type: "text", text: JSON.stringify(rules, null, 2) }] };
+    }
+
+    if (request.params.name === "remove_rule") {
+      const { id } = request.params.arguments || {};
+      const removed = removeRule(id);
+      return { content: [{ type: "text", text: removed ? `Rule ${id} removed.` : `Rule ${id} not found.` }] };
+    }
+
     if (request.params.name === "get_pending_requests") {
       const pending = listPendingIntercepts().map(serializeIntercept);
 

@@ -1,6 +1,6 @@
 import express from 'express';
 import cors from 'cors';
-import { createPendingIntercept, dropPendingIntercept, markTimedOut, addTrafficHistory } from './state.js';
+import { createPendingIntercept, dropPendingIntercept, markTimedOut, addTrafficHistory, getRules } from './state.js';
 
 const DEFAULT_TIMEOUT_MS = 20000;
 
@@ -22,6 +22,10 @@ export function startHttpServer(port = 31337) {
     res.json({ ok: true });
   });
 
+  app.get('/rules', (_req, res) => {
+    res.json(getRules());
+  });
+
   app.post('/log', (req, res) => {
     const interceptData = req.body;
     const interceptId = interceptData?.id;
@@ -33,7 +37,7 @@ export function startHttpServer(port = 31337) {
 
     addTrafficHistory(interceptData);
 
-    if (interceptData.mode === 'listen') {
+    if (interceptData.mode === 'listen' || interceptData.appliedRule) {
       res.json({ action: 'forward' });
       return;
     }

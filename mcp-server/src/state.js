@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 const pendingIntercepts = new Map();
 const trafficHistory = [];
 const MAX_HISTORY = 100;
@@ -96,4 +97,27 @@ export function dropPendingIntercept(id) {
   clearTimeout(intercept.timeoutId);
   pendingIntercepts.delete(id);
   return true;
+}
+
+let rules = [];
+
+export function getRules() {
+  return rules;
+}
+
+export function addRule(rule) {
+  const id = randomUUID();
+  const newRule = { id, ...rule, createdAt: Date.now() };
+  rules.push(newRule);
+  return newRule;
+}
+
+export function removeRule(id) {
+  const initialLength = rules.length;
+  rules = rules.filter(r => r.id !== id);
+  return rules.length < initialLength;
+}
+
+export function clearRules() {
+  rules = [];
 }

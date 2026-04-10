@@ -35,6 +35,13 @@ When the user wants to live-pause and modify traffic on the fly:
    - `drop`
    - `modify`
 
+### Workflow 4: Zero-Latency Rules (Autonomy)
+When you want to program the browser to apply a hack automatically without pausing everything:
+1. Call `get_traffic_history` to analyze the exact URL structure and payload of the target endpoint.
+2. Call `add_rule` to deploy a Zero-Latency rule (e.g. `action: "modify"`, matching `urlPattern: "/api/settings"`).
+3. The extension pulls this rule immediately. From then on, whenever the browser hits that endpoint, it instantly modifies it in 0 milliseconds without waiting for you.
+4. This is the **most powerful workflow** because the user can leave the extension in "Listen" mode (fast browsing) while your specific rule still silently intercepts and hacks the target!
+
 Rules for Interception:
 - Act quickly; unresolved intercepts auto-forward.
 - Prefer minimal changes that preserve browser stability.
