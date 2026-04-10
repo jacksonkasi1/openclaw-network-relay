@@ -431,7 +431,7 @@ async function handleResponsePause(tabId, params) {
       try {
         const binary = atob(bodyResult.body);
         const bytes = Uint8Array.from(binary, c => c.charCodeAt(0));
-        responseBody = new TextDecoder("utf-8").decode(bytes);
+        responseBody = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
       } catch(e) { responseBody = bodyResult.body; }
     }
   } catch {
