@@ -99,6 +99,29 @@ function createMcpServerInstance() {
             required: ["method"]
           }
         },
+
+        {
+          name: "browser_extract_dom",
+          description: "Extract the full HTML DOM or innerText of the current page for vulnerability scanning.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              format: { type: "string", enum: ["html", "text"], description: "Whether to return full HTML or just text content" }
+            },
+            required: ["format"]
+          }
+        },
+        {
+          name: "browser_inject_payload",
+          description: "Inject and execute a security payload (JavaScript) directly into the page context. Bypasses some network-level filters.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              payload: { type: "string", description: "The JavaScript payload to execute" }
+            },
+            required: ["payload"]
+          }
+        },
         {
           name: "browser_navigate",
           description: "Navigate the attached browser tab to a specific URL.",
@@ -258,6 +281,34 @@ function createMcpServerInstance() {
       try {
         const res = await sendCdpCommand(args.tabId || null, args.method, args.params || {});
         return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+      } catch (e) {
+        return { isError: true, content: [{ type: "text", text: e.message }] };
+      }
+    }
+
+
+    if (request.params.name === "browser_extract_dom") {
+      const args = request.params.arguments || {};
+      try {
+        const expression = args.format === 'html' ? 'document.documentElement.outerHTML' : 'document.body.innerText';
+        const res = await sendCdpCommand(null, "Runtime.evaluate", { expression, returnByValue: true });
+        if (res.exceptionDetails) {
+           return { isError: true, content: [{ type: "text", text: "Exception: " + res.exceptionDetails.exception.description }] };
+        }
+        return { content: [{ type: "text", text: res.result.value }] };
+      } catch (e) {
+        return { isError: true, content: [{ type: "text", text: e.message }] };
+      }
+    }
+
+    if (request.params.name === "browser_inject_payload") {
+      const args = request.params.arguments || {};
+      try {
+        const res = await sendCdpCommand(null, "Runtime.evaluate", { expression: args.payload, returnByValue: true });
+        if (res.exceptionDetails) {
+           return { isError: true, content: [{ type: "text", text: "Exception: " + res.exceptionDetails.exception.description }] };
+        }
+        return { content: [{ type: "text", text: JSON.stringify(res.result.value, null, 2) }] };
       } catch (e) {
         return { isError: true, content: [{ type: "text", text: e.message }] };
       }
