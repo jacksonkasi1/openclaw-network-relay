@@ -1,29 +1,187 @@
 <!DOCTYPE html>
 <html>
 <head>
+  <meta charset="utf-8" />
+  <title>OpenClaw Interceptor</title>
   <style>
-    body { width: 280px; padding: 10px; font-family: Arial, sans-serif; }
-    .header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
-    h4 { margin: 0; }
-    input { width: 100%; box-sizing: border-box; margin-bottom: 10px; padding: 5px; }
-    button { width: 100%; padding: 8px; background-color: #ff4500; color: white; border: none; cursor: pointer; font-weight: bold; border-radius: 4px; }
-    button:hover { background-color: #cc3700; }
-    
-    #toggleBtn { width: auto; padding: 5px 15px; background-color: #4CAF50; border-radius: 20px; transition: 0.3s; }
-    #toggleBtn.off { background-color: #f44336; }
+    :root {
+      color-scheme: light;
+      --bg: #f4efe6;
+      --panel: #fffaf2;
+      --text: #1f1b16;
+      --muted: #6b6257;
+      --accent: #c6551a;
+      --accent-strong: #9e4314;
+      --border: #e6d6c3;
+      --ok: #26734d;
+      --off: #8a3021;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      width: 340px;
+      margin: 0;
+      padding: 14px;
+      font-family: Georgia, "Times New Roman", serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at top right, rgba(198, 85, 26, 0.12), transparent 35%),
+        linear-gradient(180deg, #f7f1e7 0%, var(--bg) 100%);
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 14px;
+      box-shadow: 0 10px 24px rgba(73, 48, 23, 0.08);
+    }
+
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    .title {
+      margin: 0;
+      font-size: 18px;
+      letter-spacing: 0.2px;
+    }
+
+    .subtitle {
+      margin: 4px 0 0;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.4;
+    }
+
+    .toggle {
+      min-width: 82px;
+      padding: 8px 12px;
+      border: none;
+      border-radius: 999px;
+      font-weight: 700;
+      color: #fff;
+      cursor: pointer;
+      background: var(--off);
+    }
+
+    .toggle.on {
+      background: var(--ok);
+    }
+
+    .meta,
+    .field,
+    .help,
+    .status {
+      margin-top: 12px;
+    }
+
+    .label {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+    }
+
+    .value,
+    input {
+      width: 100%;
+      padding: 10px 11px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: #fff;
+      color: var(--text);
+      font-size: 13px;
+    }
+
+    .value {
+      line-height: 1.4;
+      word-break: break-word;
+    }
+
+    .actions {
+      display: flex;
+      gap: 10px;
+      margin-top: 10px;
+    }
+
+    .button {
+      flex: 1;
+      padding: 10px 12px;
+      border: none;
+      border-radius: 10px;
+      background: var(--accent);
+      color: #fff;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .button:hover {
+      background: var(--accent-strong);
+    }
+
+    .status {
+      min-height: 18px;
+      font-size: 12px;
+      color: var(--ok);
+    }
+
+    .status.error {
+      color: var(--off);
+    }
+
+    .help {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
   </style>
 </head>
 <body>
-  <div class="header-row">
-    <h4>Network Relay</h4>
-    <button id="toggleBtn">ON</button>
+  <div class="panel">
+    <div class="header">
+      <div>
+        <h1 class="title">OpenClaw Interceptor</h1>
+        <p class="subtitle">Debugger-backed interception for one active tab at a time.</p>
+      </div>
+      <button id="toggleBtn" class="toggle">OFF</button>
+    </div>
+
+    <div class="meta">
+      <span class="label">Attached Tab</span>
+      <div id="attachedTab" class="value">Not attached</div>
+    </div>
+
+    <div class="meta">
+      <span class="label">Current Tab</span>
+      <div id="currentTab" class="value">Loading...</div>
+    </div>
+
+    <div class="field">
+      <label class="label" for="webhookUrl">Webhook / MCP Bridge</label>
+      <input type="url" id="webhookUrl" placeholder="https://your-vm.example.com/log" />
+      <div class="actions">
+        <button id="saveBtn" class="button">Save Endpoint</button>
+      </div>
+    </div>
+
+    <div id="status" class="status"></div>
+
+    <div class="help">
+      Turn interception on to attach the Chrome debugger to the current tab. Your MCP bridge must reply quickly or requests are auto-forwarded.
+    </div>
   </div>
-  
-  <label for="webhookUrl" style="font-size: 13px;">Remote VM Webhook URL:</label>
-  <input type="text" id="webhookUrl" placeholder="https://your-ngrok-url.app/log" />
-  <button id="saveBtn">Save URL</button>
-  <p id="status" style="color: green; font-size: 12px; text-align: center; margin-top: 10px;"></p>
-  
+
   <script src="popup.js"></script>
 </body>
 </html>

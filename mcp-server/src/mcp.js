@@ -1,80 +1,117 @@
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
-import { pendingRequests } from './state.js';
+import { getPendingIntercept, listPendingIntercepts, resolvePendingIntercept } from './state.js';
+
+function serializeIntercept(intercept) {
+  return {
+    id: intercept.id,
+    phase: intercept.data.phase,
+    tabId: intercept.data.tabId,
+    resourceType: intercept.data.resourceType,
+    url: intercept.data.url,
+    method: intercept.data.method,
+    requestHeaders: intercept.data.requestHeaders,
+    requestBody: intercept.data.requestBody,
+    responseStatusCode: intercept.data.responseStatusCode,
+    responseStatusText: intercept.data.responseStatusText,
+    responseHeaders: intercept.data.responseHeaders,
+    responseBody: intercept.data.responseBody,
+    createdAt: new Date(intercept.createdAt).toISOString(),
+  };
+}
+
+function buildDecision(args) {
+  return {
+    action: args.action,
+    modifiedMethod: args.modifiedMethod,
+    modifiedUrl: args.modifiedUrl,
+    modifiedHeaders: args.modifiedHeaders,
+    modifiedBody: args.modifiedBody,
+    modifiedStatusCode: args.modifiedStatusCode,
+    modifiedResponseHeaders: args.modifiedResponseHeaders,
+    modifiedResponseBody: args.modifiedResponseBody,
+  };
+}
 
 export function startMcpServer() {
-    const server = new Server(
-        { name: "openclaw-burpsuite-agent", version: "1.0.0" },
-        { capabilities: { tools: {} } }
-    );
+  const server = new Server(
+    { name: "openclaw-burpsuite-agent", version: "2.0.0" },
+    { capabilities: { tools: {} } }
+  );
 
-    server.setRequestHandler(ListToolsRequestSchema, async () => {
+  server.setRequestHandler(ListToolsRequestSchema, async () => {
+    return {
+      tools: [
+        {
+          name: "get_pending_requests",
+          description: "List all currently paused browser intercepts. Includes request-phase and response-phase events.",
+          inputSchema: { type: "object", properties: {} },
+        },
+        {
+          name: "resolve_request",
+          description: "Resolve one paused intercept by forwarding it, dropping it, or modifying the request/response payload.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              id: { type: "string", description: "The paused intercept ID" },
+              action: { type: "string", enum: ["forward", "drop", "modify"], description: "How to continue the intercept" },
+              modifiedMethod: { type: "string", description: "Optional replacement request method for request-phase intercepts" },
+              modifiedUrl: { type: "string", description: "Optional replacement request URL for request-phase intercepts" },
+              modifiedHeaders: { type: "object", description: "Optional replacement request headers object" },
+              modifiedBody: { type: "string", description: "Optional replacement request body" },
+              modifiedStatusCode: { type: "number", description: "Optional replacement response status code for response-phase intercepts" },
+              modifiedResponseHeaders: { type: "object", description: "Optional replacement response headers object" },
+              modifiedResponseBody: { type: "string", description: "Optional replacement response body" }
+            },
+            required: ["id", "action"]
+          }
+        }
+      ]
+    };
+  });
+
+  server.setRequestHandler(CallToolRequestSchema, async (request) => {
+    if (request.params.name === "get_pending_requests") {
+      const pending = listPendingIntercepts().map(serializeIntercept);
+
+      if (pending.length === 0) {
+        return { content: [{ type: "text", text: "No pending requests at the moment." }] };
+      }
+
+      return { content: [{ type: "text", text: JSON.stringify(pending, null, 2) }] };
+    }
+
+    if (request.params.name === "resolve_request") {
+      const args = request.params.arguments || {};
+      const intercept = getPendingIntercept(args.id);
+
+      if (!intercept) {
         return {
-            tools: [
-                {
-                    name: "get_pending_requests",
-                    description: "List all intercepted HTTP requests waiting for your decision. Returns the ID, URL, Method, Headers, and Body.",
-                    inputSchema: { type: "object", properties: {} }
-                },
-                {
-                    name: "resolve_request",
-                    description: "Decide the fate of an intercepted HTTP request. You can forward it, drop it, or modify its payload/headers before sending it to the real server.",
-                    inputSchema: {
-                        type: "object",
-                        properties: {
-                            id: { type: "string", description: "The ID of the pending request" },
-                            action: { type: "string", enum: ["forward", "drop", "modify"], description: "What to do with the request" },
-                            modifiedBody: { type: "string", description: "If action is 'modify', provide the new stringified body" },
-                            modifiedHeaders: { type: "object", description: "If action is 'modify', provide the new headers object" }
-                        },
-                        required: ["id", "action"]
-                    }
-                }
-            ]
+          isError: true,
+          content: [{ type: "text", text: `Intercept ${args.id} not found or already resolved.` }],
         };
-    });
+      }
 
-    server.setRequestHandler(CallToolRequestSchema, async (request) => {
-        if (request.params.name === "get_pending_requests") {
-            const requests = Array.from(pendingRequests.entries()).map(([id, item]) => ({
-                id,
-                url: item.data.url,
-                method: item.data.method,
-                headers: item.data.requestHeaders,
-                body: item.data.requestBody,
-                waitingSince: new Date(item.timestamp).toISOString()
-            }));
-            
-            if (requests.length === 0) {
-                return { content: [{ type: "text", text: "No pending requests at the moment." }] };
-            }
-            
-            return { content: [{ type: "text", text: JSON.stringify(requests, null, 2) }] };
-        }
+      const resolved = resolvePendingIntercept(args.id, buildDecision(args));
 
-        if (request.params.name === "resolve_request") {
-            const { id, action, modifiedBody, modifiedHeaders } = request.params.arguments;
-            
-            if (!pendingRequests.has(id)) {
-                return { isError: true, content: [{ type: "text", text: `Request ID ${id} not found or already resolved (might have timed out).` }] };
-            }
+      if (!resolved) {
+        return {
+          isError: true,
+          content: [{ type: "text", text: `Intercept ${args.id} was no longer pending.` }],
+        };
+      }
 
-            const item = pendingRequests.get(id);
-            item.deferred.resolve({
-                action,
-                requestBody: modifiedBody,
-                requestHeaders: modifiedHeaders
-            });
+      return {
+        content: [{ type: "text", text: `Resolved ${args.id} (${intercept.data.phase}) with action ${args.action}.` }],
+      };
+    }
 
-            return { content: [{ type: "text", text: `Successfully resolved request ${id} with action: ${action}` }] };
-        }
+    throw new Error(`Tool not found: ${request.params.name}`);
+  });
 
-        throw new Error(`Tool not found: ${request.params.name}`);
-    });
-
-    const transport = new StdioServerTransport();
-    server.connect(transport).then(() => {
-        console.error("[MCP] AI Agent connection active on STDIO");
-    });
+  const transport = new StdioServerTransport();
+  server.connect(transport).then(() => {
+    console.error("[MCP] STDIO bridge ready");
+  });
 }

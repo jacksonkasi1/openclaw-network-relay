@@ -1,57 +1,70 @@
-document.addEventListener('DOMContentLoaded', () => {
-  const urlInput = document.getElementById('webhookUrl');
-  const saveBtn = document.getElementById('saveBtn');
-  const statusText = document.getElementById('status');
-  const toggleBtn = document.getElementById('toggleBtn');
-  
-  let isEnabled = true;
+document.addEventListener("DOMContentLoaded", async () => {
+  const webhookUrlInput = document.getElementById("webhookUrl");
+  const saveBtn = document.getElementById("saveBtn");
+  const toggleBtn = document.getElementById("toggleBtn");
+  const statusEl = document.getElementById("status");
+  const attachedTabEl = document.getElementById("attachedTab");
+  const currentTabEl = document.getElementById("currentTab");
 
-  function updateToggleUI() {
-    if (isEnabled) {
-      toggleBtn.textContent = 'ON';
-      toggleBtn.classList.remove('off');
-    } else {
-      toggleBtn.textContent = 'OFF';
-      toggleBtn.classList.add('off');
-    }
+  let currentTabId = null;
+  let enabled = false;
+
+  function setStatus(message, isError = false) {
+    statusEl.textContent = message;
+    statusEl.classList.toggle("error", isError);
   }
 
-  // Load saved URL and state on open
-  chrome.storage.local.get(['webhookUrl', 'isEnabled'], (res) => {
-    if (res.webhookUrl) {
-      urlInput.value = res.webhookUrl;
+  function setToggleState(nextEnabled) {
+    enabled = nextEnabled;
+    toggleBtn.textContent = nextEnabled ? "ON" : "OFF";
+    toggleBtn.classList.toggle("on", nextEnabled);
+  }
+
+  async function refreshStatus() {
+    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+    const activeTab = tabs[0] || null;
+
+    currentTabId = activeTab?.id ?? null;
+    currentTabEl.textContent = activeTab?.url || activeTab?.title || "No active tab";
+
+    const status = await chrome.runtime.sendMessage({ type: "GET_STATUS" });
+    webhookUrlInput.value = status.endpoint || "";
+    attachedTabEl.textContent = status.attachedTabLabel || "Not attached";
+    setToggleState(status.enabled === true && status.attachedTabId === currentTabId);
+  }
+
+  saveBtn.addEventListener("click", async () => {
+    const endpoint = webhookUrlInput.value.trim();
+
+    if (!endpoint) {
+      setStatus("Enter a webhook endpoint first.", true);
+      return;
     }
-    if (res.isEnabled !== undefined) {
-      isEnabled = res.isEnabled;
-      updateToggleUI();
-    }
+
+    const result = await chrome.runtime.sendMessage({ type: "SAVE_ENDPOINT", endpoint });
+    setStatus(result.ok ? "Endpoint saved." : result.error, !result.ok);
   });
 
-  // Toggle button click logic
-  toggleBtn.addEventListener('click', () => {
-    isEnabled = !isEnabled;
-    chrome.storage.local.set({ isEnabled: isEnabled }, () => {
-      updateToggleUI();
+  toggleBtn.addEventListener("click", async () => {
+    if (currentTabId == null) {
+      setStatus("Open a normal browser tab first.", true);
+      return;
+    }
+
+    const result = await chrome.runtime.sendMessage({
+      type: "SET_INTERCEPTION",
+      tabId: currentTabId,
+      enable: !enabled,
     });
+
+    if (!result.ok) {
+      setStatus(result.error, true);
+      return;
+    }
+
+    setStatus(result.enabled ? "Interception attached to current tab." : "Interception disabled.");
+    await refreshStatus();
   });
 
-  // Save new URL on button click
-  saveBtn.addEventListener('click', () => {
-    const url = urlInput.value.trim();
-    if (url) {
-      chrome.storage.local.set({ webhookUrl: url }, () => {
-        statusText.textContent = 'Saved!';
-        setTimeout(() => {
-          statusText.textContent = '';
-        }, 2000);
-      });
-    } else {
-      statusText.textContent = 'Please enter a valid URL';
-      statusText.style.color = 'red';
-      setTimeout(() => {
-        statusText.textContent = '';
-        statusText.style.color = 'green';
-      }, 2000);
-    }
-  });
+  await refreshStatus();
 });
