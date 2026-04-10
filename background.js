@@ -256,6 +256,15 @@ function fireAndForgetLog(payload) {
 }
 
 async function handleRequestPause(tabId, params) {
+  let requestBody = params.request.postData ?? null;
+
+  // Prevent massive file uploads (multipart/form-data or raw binary streams) from crashing the extension
+  // or being corrupted by the Chrome Debugger API when forwarded.
+  const contentType = headerArrayToObject(headerObjectToArray(params.request.headers || {}))['content-type'] || '';
+  if (contentType.includes('multipart/form-data') || requestBody && requestBody.length > 5000000) {
+    requestBody = `[Massive Payload Omitted - Content-Type: ${contentType}]`;
+  }
+
   const payload = {
     id: `${params.requestId}:request`,
     phase: "request",
@@ -265,7 +274,7 @@ async function handleRequestPause(tabId, params) {
     method: params.request.method,
     resourceType: params.resourceType,
     requestHeaders: params.request.headers || {},
-    requestBody: params.request.postData ?? null,
+    requestBody: requestBody,
     timestamp: Date.now(),
   };
 
