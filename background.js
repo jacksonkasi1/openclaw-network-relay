@@ -376,7 +376,13 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
 
   if (message?.type === "SAVE_ENDPOINT") {
-    const nextEndpoint = normalizeEndpoint(message.endpoint);
+    const rawEndpoint = message.endpoint || "";
+    if (!rawEndpoint.trim()) {
+      sendResponse({ ok: false, error: "Enter a webhook endpoint first." });
+      return false;
+    }
+
+    const nextEndpoint = normalizeEndpoint(rawEndpoint);
 
     if (!isSecureEndpoint(nextEndpoint)) {
       sendResponse({ ok: false, error: "Use HTTPS or localhost/127.0.0.1 over HTTP." });
