@@ -2,6 +2,7 @@ import { Database } from "bun:sqlite";
 import { randomUUID } from "crypto";
 
 const db = new Database("openclaw.sqlite", { create: true });
+db.exec("PRAGMA journal_mode = WAL;");
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS rules (
@@ -40,6 +41,9 @@ db.exec(`
     timestamp INTEGER
   );
 `);
+
+db.exec(`CREATE INDEX IF NOT EXISTS idx_rules_active ON rules(isActive);`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_traffic_timestamp ON traffic_logs(timestamp);`);
 
 function parseRule(r) {
   return {

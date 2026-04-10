@@ -216,7 +216,20 @@ export function startMcpServer() {
         }
 
         const response = await fetch(url, options);
-        const responseText = await response.text();
+        let responseText;
+        const contentType = response.headers.get("content-type") || "";
+        
+        // Prevent crashing the MCP server or returning garbled text on massive binary responses
+        if (contentType.includes("image/") || contentType.includes("video/") || contentType.includes("application/zip") || contentType.includes("application/octet-stream")) {
+          responseText = `[Binary Data Omitted - Content-Type: ${contentType}]`;
+        } else {
+          responseText = await response.text();
+          // Truncate massively large text files
+          if (responseText.length > 50000) {
+            responseText = responseText.substring(0, 50000) + "... [Truncated]";
+          }
+        }
+
         const responseHeaders = Object.fromEntries(response.headers.entries());
 
         const result = {
