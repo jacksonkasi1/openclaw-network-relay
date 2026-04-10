@@ -112,6 +112,23 @@ export function addRule(rule) {
   return { ...rule, id };
 }
 
+export function updateRule(id, updates) {
+  const stmt = db.prepare(`
+    UPDATE rules 
+    SET name=?, folder=?, urlPattern=?, method=?, phase=?, action=?, modifiedMethod=?, modifiedUrl=?, modifiedHeaders=?, modifiedBody=?, modifiedStatusCode=?, modifiedResponseHeaders=?, modifiedResponseBody=?
+    WHERE id=?
+  `);
+  stmt.run(
+    updates.name, updates.folder || 'Uncategorized', updates.urlPattern, updates.method, updates.phase, updates.action,
+    updates.modifiedMethod, updates.modifiedUrl, 
+    updates.modifiedHeaders ? JSON.stringify(updates.modifiedHeaders) : null,
+    updates.modifiedBody, updates.modifiedStatusCode,
+    updates.modifiedResponseHeaders ? JSON.stringify(updates.modifiedResponseHeaders) : null,
+    updates.modifiedResponseBody,
+    id
+  );
+}
+
 export function updateRuleState(id, isActive) {
   db.query("UPDATE rules SET isActive = ? WHERE id = ?").run(isActive ? 1 : 0, id);
 }

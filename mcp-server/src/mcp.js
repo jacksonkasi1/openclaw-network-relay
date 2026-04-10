@@ -1,5 +1,6 @@
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { getPendingIntercept, listPendingIntercepts, resolvePendingIntercept } from './state.js';
 import { getTrafficLogs, getAllRules, addRule, removeRule, organizeLogIntoFolder, clearAllTrafficLogs, clearAllRules } from './db.js';
@@ -36,7 +37,7 @@ function buildDecision(args) {
   };
 }
 
-export function startMcpServer() {
+function createMcpServerInstance() {
   const server = new Server(
     { name: "openclaw-burpsuite-agent", version: "3.0.0" },
     { capabilities: { tools: {} } }
@@ -319,8 +320,37 @@ export function startMcpServer() {
     throw new Error(`Tool not found: ${request.params.name}`);
   });
 
-  const transport = new StdioServerTransport();
-  server.connect(transport).then(() => {
-    console.error("[MCP] STDIO bridge ready");
+  return server;
+}
+
+export function startMcpServer(app) {
+  // 1. STDIO Transport (For Local AI on Mac)
+  const stdioServer = createMcpServerInstance();
+  const stdioTransport = new StdioServerTransport();
+  stdioServer.connect(stdioTransport).then(() => {
+    console.error("[MCP] STDIO bridge ready (Local AI)");
+  });
+
+  // 2. SSE Transport (For Remote AI on VM)
+  let sseServer = null;
+  let sseTransport = null;
+
+  app.get("/sse", async (req, res) => {
+    if (!global.sseEnabled) {
+      res.status(403).json({ error: "Remote AI access (SSE) is disabled in the dashboard." });
+      return;
+    }
+    console.error("[MCP] New SSE connection established (Remote AI)");
+    sseServer = createMcpServerInstance();
+    sseTransport = new SSEServerTransport("/message", res);
+    await sseServer.connect(sseTransport);
+  });
+
+  app.post("/message", async (req, res) => {
+    if (!global.sseEnabled || !sseTransport) {
+      res.status(403).json({ error: "Remote AI access (SSE) is disabled or not connected." });
+      return;
+    }
+    await sseTransport.handlePostMessage(req, res);
   });
 }

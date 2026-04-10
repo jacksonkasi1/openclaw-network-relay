@@ -3,23 +3,32 @@ import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { createPendingIntercept, dropPendingIntercept, markTimedOut } from './state.js';
-import { getActiveRules, getAllRules, addTrafficLog, getTrafficLogs, updateRuleState, removeRule, clearAllTrafficLogs, clearAllRules } from './db.js';
+import { getActiveRules, getAllRules, addTrafficLog, getTrafficLogs, updateRuleState, updateRule, removeRule, clearAllTrafficLogs, clearAllRules } from './db.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicPath = path.resolve(__dirname, '../public');
 
 const DEFAULT_TIMEOUT_MS = 20000;
 
+global.sseEnabled = false;
+
 function fallbackDecisionForPhase(phase) {
   return { action: 'forward' };
 }
 
-export function startHttpServer(port = 31337) {
+export function createHttpApp() {
   const app = express();
 
   app.use(cors({ origin: ['http://127.0.0.1:31337', 'http://localhost:31337'] }));
   app.use(express.json({ limit: '50mb' }));
   app.use(express.static(publicPath)); // Serve the web dashboard
+
+  // SSE Remote AI Settings
+  app.get('/api/settings', (_req, res) => res.json({ sseEnabled: global.sseEnabled }));
+  app.post('/api/settings/sse', (req, res) => {
+    global.sseEnabled = !!req.body.enabled;
+    res.json({ ok: true, sseEnabled: global.sseEnabled });
+  });
 
   // Health and Rule sync endpoints for the Chrome Extension
   app.get('/health', (_req, res) => res.json({ ok: true }));
@@ -28,6 +37,10 @@ export function startHttpServer(port = 31337) {
   // Internal API for the Web Dashboard
   app.get('/api/rules', (_req, res) => res.json(getAllRules()));
   app.get('/api/logs', (_req, res) => res.json(getTrafficLogs()));
+  app.put('/api/rules/:id', (req, res) => {
+    updateRule(req.params.id, req.body);
+    res.json({ ok: true });
+  });
   app.post('/api/rules/:id/toggle', (req, res) => {
     updateRuleState(req.params.id, req.body.isActive);
     res.json({ ok: true });
@@ -85,7 +98,5 @@ export function startHttpServer(port = 31337) {
       });
   });
 
-  app.listen(port, '127.0.0.1', () => {
-    console.error(`[HTTP] OpenClaw Dashboard and MCP bridge listening on http://127.0.0.1:${port}`);
-  });
+  return app;
 }

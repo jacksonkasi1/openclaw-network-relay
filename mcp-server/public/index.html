@@ -52,6 +52,22 @@
       <li data-folder="Inbox">Inbox</li>
       <li data-folder="Uncategorized">Uncategorized</li>
     </ul>
+    
+    <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #3c3c3c;">
+      <h3 style="font-size: 11px; color: #858585; text-transform: uppercase; margin-bottom: 10px;">Remote AI Tunnel (SSE)</h3>
+      <div style="display: flex; align-items: center;">
+        <label class="switch">
+          <input type="checkbox" id="sseToggle" onchange="toggleSse(this.checked)">
+          <span class="slider"></span>
+        </label>
+        <span id="sseStatus" style="font-size: 13px; margin-left: 10px; color: #858585; font-weight: bold;">Disabled</span>
+      </div>
+      <p style="font-size: 11px; color: #858585; margin-top: 10px; line-height: 1.4;">Enable this to allow an AI on a remote VM to connect via your ngrok/lhr.life tunnel.</p>
+      <div id="sseUrlContainer" style="display: none; margin-top: 10px; background: #1e1e1e; border: 1px solid #3c3c3c; padding: 5px 10px; border-radius: 4px; align-items: center;">
+        <span style="font-size: 12px; color: #d4d4d4; flex: 1; user-select: all;" id="sseUrlText"></span>
+        <button style="background: #0e639c; color: #fff; border: none; border-radius: 4px; padding: 4px 8px; cursor: pointer; font-size: 11px; font-weight: bold;" onclick="copySseUrl(this)">Copy URL</button>
+      </div>
+    </div>
   </div>
 
   <div class="main">
@@ -84,6 +100,7 @@
 
   <script>
     let currentFolder = 'All';
+    let allRulesData = [];
 
     function escapeHTML(str) {
       if (str == null) return '';
@@ -131,6 +148,43 @@
       });
     }
 
+    function openRuleEdit(id) {
+      document.getElementById('rule-display-' + id).style.display = 'none';
+      document.getElementById('rule-edit-' + id).style.display = 'block';
+    }
+
+    function cancelRuleEdit(id) {
+      document.getElementById('rule-display-' + id).style.display = 'block';
+      document.getElementById('rule-edit-' + id).style.display = 'none';
+    }
+
+    async function saveRuleEdit(id) {
+      const rule = allRulesData.find(r => r.id === id);
+      if (!rule) return;
+      
+      const payload = {
+        ...rule,
+        name: document.getElementById('edit-name-' + id).value,
+        folder: document.getElementById('edit-folder-' + id).value,
+        urlPattern: document.getElementById('edit-url-' + id).value,
+        action: document.getElementById('edit-action-' + id).value,
+        phase: document.getElementById('edit-phase-' + id).value,
+        modifiedBody: document.getElementById('edit-modbody-' + id).value || null,
+        modifiedResponseBody: document.getElementById('edit-modresbody-' + id).value || null,
+      };
+
+      try {
+        await fetch('/api/rules/' + id, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        loadData();
+      } catch (e) {
+        alert('Failed to save rule: ' + e.message);
+      }
+    }
+
     async function deleteRule(id) {
       if(confirm('Delete this rule?')) {
         await fetch(`/api/rules/${id}`, { method: 'DELETE' });
@@ -173,17 +227,37 @@
               <span class="tag action">${escapeHTML((rule.action || 'unknown').toUpperCase())}</span>
             </div>
             <div style="display:flex; gap:10px; align-items:center;">
-              <label class="switch">
+              <label class="switch" title="Toggle ON/OFF">
                 <input type="checkbox" class="rule-toggle" data-rule-id="${escapeHTML(rule.id)}" ${rule.isActive ? 'checked' : ''}>
                 <span class="slider"></span>
               </label>
+              <button style="background: #4a4a4f; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer;" class="rule-edit" data-rule-id="${escapeHTML(rule.id)}">Edit</button>
               <button class="btn-danger rule-delete" data-rule-id="${escapeHTML(rule.id)}">Delete</button>
             </div>
           </div>
-          <div style="font-size:13px;">
+          <div id="rule-display-${escapeHTML(rule.id)}" style="font-size:13px;">
             <p><strong>Match:</strong> ${escapeHTML(rule.method || 'ANY')} ${escapeHTML(rule.urlPattern)}</p>
             ${rule.modifiedBody ? `<p><strong>Override Body:</strong></p><pre>${escapeHTML(rule.modifiedBody)}</pre>` : ''}
             ${rule.modifiedResponseBody ? `<p><strong>Override Response Body:</strong></p><pre>${escapeHTML(rule.modifiedResponseBody)}</pre>` : ''}
+          </div>
+          
+          <div id="rule-edit-${escapeHTML(rule.id)}" style="display:none; font-size:13px; margin-top:10px; padding:10px; background:#1e1e1e; border-radius:4px; border:1px solid #3c3c3c;">
+            <label class="label">Name</label><input type="text" id="edit-name-${escapeHTML(rule.id)}" value="${escapeHTML(rule.name)}"><br><br>
+            <label class="label">Folder</label><input type="text" id="edit-folder-${escapeHTML(rule.id)}" value="${escapeHTML(rule.folder)}"><br><br>
+            <label class="label">URL Pattern</label><input type="text" id="edit-url-${escapeHTML(rule.id)}" value="${escapeHTML(rule.urlPattern)}"><br><br>
+            <label class="label">Action (forward/drop/modify)</label><input type="text" id="edit-action-${escapeHTML(rule.id)}" value="${escapeHTML(rule.action)}"><br><br>
+            <label class="label">Phase (request/response/both)</label><input type="text" id="edit-phase-${escapeHTML(rule.id)}" value="${escapeHTML(rule.phase)}"><br><br>
+            
+            <label class="label">Modified Request Body (Optional)</label>
+            <textarea id="edit-modbody-${escapeHTML(rule.id)}" style="width:100%; height:80px; padding:8px; border-radius:4px; border:1px solid #3c3c3c; background:#252526; color:#d4d4d4;">${escapeHTML(rule.modifiedBody || '')}</textarea><br><br>
+            
+            <label class="label">Modified Response Body (Optional)</label>
+            <textarea id="edit-modresbody-${escapeHTML(rule.id)}" style="width:100%; height:80px; padding:8px; border-radius:4px; border:1px solid #3c3c3c; background:#252526; color:#d4d4d4;">${escapeHTML(rule.modifiedResponseBody || '')}</textarea><br><br>
+            
+            <div style="display:flex; gap:10px;">
+              <button class="btn-danger" style="background:#0e639c;" onclick="saveRuleEdit('${escapeHTML(rule.id)}')">Save Changes</button>
+              <button class="btn-danger" style="background:#4a4a4f;" onclick="cancelRuleEdit('${escapeHTML(rule.id)}')">Cancel</button>
+            </div>
           </div>
         `;
         container.appendChild(card);
@@ -191,6 +265,8 @@
         toggle.addEventListener('change', (e) => toggleRule(rule.id, e.target.checked));
         const delBtn = card.querySelector('.rule-delete');
         delBtn.addEventListener('click', () => deleteRule(rule.id));
+        const editBtn = card.querySelector('.rule-edit');
+        editBtn.addEventListener('click', () => openRuleEdit(rule.id));
       });
     }
 
@@ -261,9 +337,51 @@
         fetchData('/api/logs')
       ]);
       
+      allRulesData = rules;
       updateFolders(rules, logs);
       renderRules(rules);
       renderLogs(logs);
+    }
+
+    async function loadSettings() {
+      try {
+        const res = await fetch('/api/settings');
+        const data = await res.json();
+        const toggle = document.getElementById('sseToggle');
+        const status = document.getElementById('sseStatus');
+        toggle.checked = data.sseEnabled;
+        status.textContent = data.sseEnabled ? 'Enabled (Tunnel Active)' : 'Disabled';
+        status.style.color = data.sseEnabled ? '#89d185' : '#858585';
+        
+        const urlContainer = document.getElementById('sseUrlContainer');
+        const urlText = document.getElementById('sseUrlText');
+        if (data.sseEnabled) {
+          urlContainer.style.display = 'flex';
+          urlText.textContent = window.location.origin + '/sse';
+        } else {
+          urlContainer.style.display = 'none';
+        }
+      } catch (e) {}
+    }
+
+    async function toggleSse(enabled) {
+      await fetch('/api/settings/sse', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled })
+      });
+      loadSettings();
+    }
+
+    async function copySseUrl(btn) {
+      const text = document.getElementById('sseUrlText').textContent;
+      try {
+        await navigator.clipboard.writeText(text);
+        const oldText = btn.textContent;
+        btn.textContent = 'Copied!';
+        btn.style.background = '#89d185';
+        setTimeout(() => { btn.textContent = oldText; btn.style.background = '#0e639c'; }, 2000);
+      } catch (e) {}
     }
 
     let isSyncing = false;
@@ -281,6 +399,7 @@
 
     // Auto-refresh every 3 seconds
     setInterval(loadDataSafe, 3000);
+    loadSettings();
     loadDataSafe();
   </script>
 </body>
