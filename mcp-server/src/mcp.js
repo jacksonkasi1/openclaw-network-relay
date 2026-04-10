@@ -2,7 +2,7 @@ import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { getPendingIntercept, listPendingIntercepts, resolvePendingIntercept } from './state.js';
-import { getTrafficLogs, getAllRules, addRule, removeRule, organizeLogIntoFolder } from './db.js';
+import { getTrafficLogs, getAllRules, addRule, removeRule, organizeLogIntoFolder, clearAllTrafficLogs, clearAllRules } from './db.js';
 
 function serializeIntercept(intercept) {
   return {
@@ -79,6 +79,11 @@ export function startMcpServer() {
           inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] }
         },
         {
+          name: "clear_all_rules",
+          description: "Permanently delete ALL Zero-Latency interception rules from the SQLite database.",
+          inputSchema: { type: "object", properties: {} }
+        },
+        {
           name: "get_pending_requests",
           description: "List all currently paused browser intercepts. Includes request-phase and response-phase events.",
           inputSchema: { type: "object", properties: {} },
@@ -105,6 +110,11 @@ export function startMcpServer() {
             },
             required: ["log_id", "folder"]
           }
+        },
+        {
+          name: "clear_traffic_logs",
+          description: "Permanently delete ALL traffic history logs from the SQLite database.",
+          inputSchema: { type: "object", properties: {} }
         },
         {
           name: "replay_request",
@@ -163,6 +173,11 @@ export function startMcpServer() {
       return { content: [{ type: "text", text: removed ? `Rule ${id} removed.` : `Rule ${id} not found.` }] };
     }
 
+    if (request.params.name === "clear_all_rules") {
+      clearAllRules();
+      return { content: [{ type: "text", text: "Successfully deleted all zero-latency rules from the database." }] };
+    }
+
     if (request.params.name === "get_pending_requests") {
       const pending = listPendingIntercepts().map(serializeIntercept);
       if (pending.length === 0) {
@@ -190,6 +205,11 @@ export function startMcpServer() {
       const { log_id, folder } = request.params.arguments || {};
       const success = organizeLogIntoFolder(log_id, folder);
       return { content: [{ type: "text", text: success ? `Saved log ${log_id} to folder ${folder}` : `Log not found` }] };
+    }
+
+    if (request.params.name === "clear_traffic_logs") {
+      clearAllTrafficLogs();
+      return { content: [{ type: "text", text: "Successfully deleted all traffic history logs from the database." }] };
     }
 
     if (request.params.name === "replay_request") {

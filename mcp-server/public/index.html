@@ -62,15 +62,23 @@
 
     <!-- Traffic Logs Tab -->
     <div id="logs" class="content active">
-      <h3>Recent Traffic Logs</h3>
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <h3>Recent Traffic Logs</h3>
+        <button class="btn-danger" onclick="clearAllLogs()">Clear All Logs</button>
+      </div>
       <div id="logsContainer">Loading logs...</div>
     </div>
 
     <!-- Rules Tab -->
     <div id="rules" class="content">
-      <h3>Active Interception Rules</h3>
-      <p style="font-size: 13px; color: #9cdcfe;">These rules are synchronized to the Chrome extension and execute in 0ms.</p>
-      <div id="rulesContainer">Loading rules...</div>
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <div>
+          <h3>Active Interception Rules</h3>
+          <p style="font-size: 13px; color: #9cdcfe; margin: 0;">These rules are synchronized to the Chrome extension and execute in 0ms.</p>
+        </div>
+        <button class="btn-danger" onclick="clearAllRules()">Clear All Rules</button>
+      </div>
+      <div id="rulesContainer" style="margin-top: 15px;">Loading rules...</div>
     </div>
   </div>
 
@@ -109,11 +117,18 @@
       }
     }
 
-    function escapeHTML(str) {
-      if (!str) return '';
-      return String(str).replace(/[&<>'"]/g, 
-        tag => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag])
-      );
+    async function clearAllLogs() {
+      if(confirm('Are you sure you want to clear all traffic logs permanently?')) {
+        await fetch('/api/logs', { method: 'DELETE' });
+        loadData();
+      }
+    }
+
+    async function clearAllRules() {
+      if(confirm('Are you sure you want to clear ALL interception rules permanently?')) {
+        await fetch('/api/rules', { method: 'DELETE' });
+        loadData();
+      }
     }
 
     function renderRules(rules) {

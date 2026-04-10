@@ -3,7 +3,7 @@ import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { createPendingIntercept, dropPendingIntercept, markTimedOut } from './state.js';
-import { getActiveRules, getAllRules, addTrafficLog, getTrafficLogs, updateRuleState, removeRule } from './db.js';
+import { getActiveRules, getAllRules, addTrafficLog, getTrafficLogs, updateRuleState, removeRule, clearAllTrafficLogs, clearAllRules } from './db.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DEFAULT_TIMEOUT_MS = 20000;
@@ -32,6 +32,14 @@ export function startHttpServer(port = 31337) {
   });
   app.delete('/api/rules/:id', (req, res) => {
     removeRule(req.params.id);
+    res.json({ ok: true });
+  });
+  app.delete('/api/rules', (_req, res) => {
+    clearAllRules();
+    res.json({ ok: true });
+  });
+  app.delete('/api/logs', (_req, res) => {
+    clearAllTrafficLogs();
     res.json({ ok: true });
   });
 

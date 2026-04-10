@@ -128,3 +128,11 @@ export function organizeLogIntoFolder(id, folder) {
   const res = db.query("UPDATE traffic_logs SET folder = ? WHERE id = ?").run(folder, id);
   return res.changes > 0;
 }
+
+export function clearAllTrafficLogs() {
+  db.query("DELETE FROM traffic_logs").run();
+}
+
+export function clearAllRules() {
+  db.query("DELETE FROM rules").run();
+}
