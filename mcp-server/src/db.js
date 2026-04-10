@@ -55,12 +55,33 @@ function parseRule(r) {
 }
 
 function parseLog(l) {
+  let reqHeaders, resHeaders;
+  try { reqHeaders = l.requestHeaders ? JSON.parse(l.requestHeaders) : undefined; } catch(e) {}
+  try { resHeaders = l.responseHeaders ? JSON.parse(l.responseHeaders) : undefined; } catch(e) {}
+  
   return {
     ...l,
-    requestHeaders: l.requestHeaders ? JSON.parse(l.requestHeaders) : undefined,
-    responseHeaders: l.responseHeaders ? JSON.parse(l.responseHeaders) : undefined,
+    requestHeaders: reqHeaders,
+    responseHeaders: resHeaders,
   };
 }
+
+// Pre-compiled statements for high throughput
+const insertRuleStmt = db.prepare(`
+  INSERT INTO rules (id, name, folder, urlPattern, method, phase, action, modifiedMethod, modifiedUrl, modifiedHeaders, modifiedBody, modifiedStatusCode, modifiedResponseHeaders, modifiedResponseBody, isActive, createdAt)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`);
+
+const insertLogStmt = db.prepare(`
+  INSERT INTO traffic_logs (id, folder, phase, mode, url, method, requestHeaders, requestBody, responseStatusCode, responseHeaders, responseBody, timestamp)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`);
+
+const cleanupLogsStmt = db.prepare(`
+  DELETE FROM traffic_logs WHERE id IN (
+    SELECT id FROM traffic_logs ORDER BY timestamp DESC LIMIT -1 OFFSET 2000
+  )
+`);
 
 // Rules functions
 export function getActiveRules() {
@@ -73,11 +94,7 @@ export function getAllRules() {
 
 export function addRule(rule) {
   const id = randomUUID();
-  const stmt = db.prepare(`
-    INSERT INTO rules (id, name, folder, urlPattern, method, phase, action, modifiedMethod, modifiedUrl, modifiedHeaders, modifiedBody, modifiedStatusCode, modifiedResponseHeaders, modifiedResponseBody, isActive, createdAt)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-  stmt.run(
+  insertRuleStmt.run(
     id, rule.name, rule.folder || 'Uncategorized', rule.urlPattern, rule.method, rule.phase, rule.action,
     rule.modifiedMethod, rule.modifiedUrl,
     rule.modifiedHeaders ? JSON.stringify(rule.modifiedHeaders) : null,
@@ -100,11 +117,7 @@ export function removeRule(id) {
 
 // Traffic log functions
 export function addTrafficLog(data) {
-  const stmt = db.prepare(`
-    INSERT INTO traffic_logs (id, folder, phase, mode, url, method, requestHeaders, requestBody, responseStatusCode, responseHeaders, responseBody, timestamp)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-  stmt.run(
+  insertLogStmt.run(
     data.id || randomUUID(),
     data.folder || 'Inbox',
     data.phase,
@@ -118,6 +131,11 @@ export function addTrafficLog(data) {
     data.responseBody,
     Date.now()
   );
+  
+  // Auto-prune old logs to prevent DB bloat (keeps last 2000)
+  if (Math.random() < 0.05) {
+    cleanupLogsStmt.run();
+  }
 }
 
 export function getTrafficLogs(limit = 100) {

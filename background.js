@@ -38,19 +38,20 @@ function headerObjectToArray(headers = {}) {
 
 function headerArrayToObject(headers = []) {
   const result = {};
-
   for (const header of headers) {
-    if (!header || !header.name) {
-      continue;
+    if (!header || !header.name) continue;
+    const name = header.name.toLowerCase();
+    if (result[name]) {
+      result[name] = result[name] + ", " + (header.value ?? "");
+    } else {
+      result[name] = header.value ?? "";
     }
-
-    result[header.name.toLowerCase()] = header.value ?? "";
   }
-
   return result;
 }
 
 function encodeUtf8ToBase64(value) {
+  if (value === null || value === undefined) return "";
   const bytes = new TextEncoder().encode(value);
   let binary = "";
   for (let i = 0; i < bytes.byteLength; i += 8192) {
@@ -123,18 +124,12 @@ async function detachFromTab(tabId) {
 }
 
 async function attachToTab(tabId) {
-  if (tabId == null) {
-    throw new Error("No target tab selected");
-  }
-
+  if (tabId == null) throw new Error("No target tab selected");
   if (state.attachedTabId != null && state.attachedTabId !== tabId) {
     await detachFromTab(state.attachedTabId);
   }
-
-  if (state.attachedTabId === tabId) {
-    return;
-  }
-
+  // Remove the early return so the interval starts even if tabId matches
+  
   try {
     await chrome.debugger.attach(targetForTab(tabId), DEBUGGER_VERSION);
   } catch (error) {
@@ -337,6 +332,9 @@ async function handleResponsePause(tabId, params) {
     responseBody = bodyResult.body;
     responseBodyBase64 = bodyResult.base64Encoded ? bodyResult.body : encodeUtf8ToBase64(bodyResult.body);
     responseBodyEncoded = bodyResult.base64Encoded;
+    if (bodyResult.base64Encoded) {
+      try { responseBody = atob(bodyResult.body); } catch(e) { responseBody = bodyResult.body; }
+    }
   } catch {
     responseBody = null;
     responseBodyBase64 = null;
