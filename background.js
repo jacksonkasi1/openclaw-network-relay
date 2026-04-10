@@ -8,7 +8,8 @@ const state = {
   mode: "listen",
   attachedTabId: null,
   rules: [],
-  ruleSyncInterval: null
+  ruleSyncInterval: null,
+  ruleSyncInFlight: false
 };
 
 function targetForTab(tabId) {
@@ -70,24 +71,39 @@ async function sendCommand(tabId, method, params = {}) {
 }
 
 async function syncRules() {
-  if (!isSecureEndpoint(state.endpoint)) return;
+  if (state.ruleSyncInFlight) return;
+  state.ruleSyncInFlight = true;
+
+  if (!isSecureEndpoint(state.endpoint)) {
+    state.ruleSyncInFlight = false;
+    return;
+  }
+
   try {
     const rulesUrl = new URL(state.endpoint);
     rulesUrl.pathname = '/rules';
     const res = await fetch(rulesUrl.href);
-    if (res.ok) state.rules = await res.json();
-  } catch (e) {}
+    if (res.ok) {
+      const nextRules = await res.json();
+      if (Array.isArray(nextRules)) state.rules = nextRules;
+    }
+  } catch (e) {
+  } finally {
+    state.ruleSyncInFlight = false;
+  }
 }
 
 function startRuleSync() {
   if (state.ruleSyncInterval) clearInterval(state.ruleSyncInterval);
-  syncRules();
-  state.ruleSyncInterval = setInterval(syncRules, 2000);
+  state.ruleSyncInFlight = false;
+  void syncRules();
+  state.ruleSyncInterval = setInterval(() => { void syncRules(); }, 2000);
 }
 
 function stopRuleSync() {
   if (state.ruleSyncInterval) clearInterval(state.ruleSyncInterval);
   state.ruleSyncInterval = null;
+  state.ruleSyncInFlight = false;
   state.rules = [];
 }
 
