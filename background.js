@@ -1,4 +1,4 @@
-const DEFAULT_ENDPOINT = "http://127.0.0.1:31337/log";
+const DEFAULT_ENDPOINT = "";
 const DEBUGGER_VERSION = "1.3";
 const DECISION_TIMEOUT_MS = 20000;
 
