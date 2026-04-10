@@ -1,7 +1,6 @@
 import { Database } from "bun:sqlite";
 import { randomUUID } from "crypto";
 import { join } from "path";
-import { clearRules } from "./state.js";
 
 const dbPath = join(import.meta.dir, "..", "openclaw.sqlite");
 const db = new Database(dbPath, { create: true });
@@ -156,5 +155,4 @@ export function clearAllTrafficLogs() {
 
 export function clearAllRules() {
   db.query("DELETE FROM rules").run();
-  clearRules(); // ensure state.js rules array is also wiped
 }
