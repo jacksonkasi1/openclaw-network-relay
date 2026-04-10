@@ -1,21 +1,17 @@
 {
-  "name": "mcp-server",
+  "name": "openclaw-network-relay",
   "version": "1.0.0",
-  "description": "OpenClaw MCP bridge for debugger-backed browser interception",
-  "private": true,
+  "description": "Local MCP server and API for OpenClaw extension",
   "main": "src/index.js",
   "scripts": {
     "start": "bun run src/index.js",
-    "check": "bun --check src/index.js src/db.js src/http.js src/mcp.js src/state.js"
+    "check": "bun --check src/index.js src/db.js src/http.js src/mcp.js src/state.js src/cdp.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "module",
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.29.0",
-    "cors": "^2.8.6",
-    "express": "^5.2.1",
+    "@modelcontextprotocol/sdk": "^1.6.0",
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
     "untun": "^0.1.3"
   }
 }
