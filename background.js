@@ -50,11 +50,9 @@ function headerArrayToObject(headers = []) {
 function encodeUtf8ToBase64(value) {
   const bytes = new TextEncoder().encode(value);
   let binary = "";
-
-  for (const byte of bytes) {
-    binary += String.fromCharCode(byte);
+  for (let i = 0; i < bytes.byteLength; i += 8192) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + 8192));
   }
-
   return btoa(binary);
 }
 
@@ -182,9 +180,16 @@ async function continueResponse(tabId, requestId, responseParams = null, respons
     await sendCommand(tabId, "Fetch.continueResponse", { requestId });
   } catch {
     if (responseParams) {
+      if (responseParams.responseErrorReason) {
+        await sendCommand(tabId, "Fetch.failRequest", {
+          requestId,
+          errorReason: responseParams.responseErrorReason,
+        });
+        return;
+      }
       await sendCommand(tabId, "Fetch.fulfillRequest", {
         requestId,
-        responseCode: responseParams.responseStatusCode,
+        responseCode: responseParams.responseStatusCode || 200,
         responseHeaders: responseParams.responseHeaders || [],
         body: responseBodyBase64 || "",
       });
@@ -196,7 +201,9 @@ async function continueResponse(tabId, requestId, responseParams = null, respons
 }
 
 async function continuePausedRequest(tabId, params, responseBodyBase64 = null) {
-  if (params.responseStatusCode) {
+  const isResponsePhase = params.responseStatusCode !== undefined || params.responseErrorReason !== undefined;
+
+  if (isResponsePhase) {
     await continueResponse(tabId, params.requestId, params, responseBodyBase64);
     return;
   }
@@ -230,7 +237,7 @@ async function handleRequestPause(tabId, params) {
       requestId: params.requestId,
       url: decision.modifiedUrl,
       method: decision.modifiedMethod,
-      postData: decision.modifiedBody,
+      postData: decision.modifiedBody != null ? encodeUtf8ToBase64(decision.modifiedBody) : undefined,
       headers: decision.modifiedHeaders ? headerObjectToArray(decision.modifiedHeaders) : undefined,
     });
     return;
@@ -291,7 +298,7 @@ async function handleResponsePause(tabId, params) {
 
     await sendCommand(tabId, "Fetch.fulfillRequest", {
       requestId: params.requestId,
-      responseCode: decision.modifiedStatusCode || params.responseStatusCode,
+      responseCode: decision.modifiedStatusCode || params.responseStatusCode || 200,
       responseHeaders,
       body: responseBodyForFulfill || "",
     });
@@ -307,7 +314,9 @@ async function handlePausedRequest(tabId, params) {
     return;
   }
 
-  if (params.responseStatusCode) {
+  const isResponsePhase = params.responseStatusCode !== undefined || params.responseErrorReason !== undefined;
+
+  if (isResponsePhase) {
     await handleResponsePause(tabId, params);
     return;
   }
