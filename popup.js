@@ -2,6 +2,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   const webhookUrlInput = document.getElementById("webhookUrl");
   const saveBtn = document.getElementById("saveBtn");
   const toggleBtn = document.getElementById("toggleBtn");
+  const modeSelect = document.getElementById("modeSelect");
   const statusEl = document.getElementById("status");
   const attachedTabEl = document.getElementById("attachedTab");
   const currentTabEl = document.getElementById("currentTab");
@@ -29,8 +30,23 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     const status = await chrome.runtime.sendMessage({ type: "GET_STATUS" });
     webhookUrlInput.value = status.endpoint || "";
+    if (modeSelect && status.mode) {
+      modeSelect.value = status.mode;
+    }
     attachedTabEl.textContent = status.attachedTabLabel || "Not attached";
     setToggleState(status.enabled === true && status.attachedTabId === currentTabId);
+  }
+
+  if (modeSelect) {
+    modeSelect.addEventListener("change", async () => {
+      const result = await chrome.runtime.sendMessage({
+        type: "SET_MODE",
+        mode: modeSelect.value
+      });
+      if (result.ok) {
+        setStatus(result.mode === "listen" ? "Listening & Logging traffic." : "Intercepting & Pausing traffic.");
+      }
+    });
   }
 
   saveBtn.addEventListener("click", async () => {

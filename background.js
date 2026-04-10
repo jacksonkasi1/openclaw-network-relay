@@ -5,6 +5,7 @@ const DECISION_TIMEOUT_MS = 20000;
 const state = {
   endpoint: DEFAULT_ENDPOINT,
   enabled: false,
+  mode: "listen",
   attachedTabId: null,
 };
 
@@ -64,6 +65,7 @@ async function persistState() {
   await chrome.storage.local.set({
     webhookUrl: state.endpoint,
     isEnabled: state.enabled,
+    mode: state.mode,
     attachedTabId: state.attachedTabId,
   });
 }
@@ -116,10 +118,11 @@ async function attachToTab(tabId) {
 }
 
 async function loadSettings() {
-  const stored = await chrome.storage.local.get(["webhookUrl", "isEnabled", "attachedTabId"]);
+  const stored = await chrome.storage.local.get(["webhookUrl", "isEnabled", "mode", "attachedTabId"]);
 
   state.endpoint = normalizeEndpoint(stored.webhookUrl);
   state.enabled = stored.isEnabled === true;
+  state.mode = stored.mode === "intercept" ? "intercept" : "listen";
   state.attachedTabId = Number.isInteger(stored.attachedTabId) ? stored.attachedTabId : null;
 
   if (state.enabled && state.attachedTabId != null) {
@@ -211,10 +214,20 @@ async function continuePausedRequest(tabId, params, responseBodyBase64 = null) {
   await sendCommand(tabId, "Fetch.continueRequest", { requestId: params.requestId });
 }
 
+function fireAndForgetLog(payload) {
+  if (!isSecureEndpoint(state.endpoint)) return;
+  fetch(state.endpoint, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  }).catch(() => {});
+}
+
 async function handleRequestPause(tabId, params) {
-  const decision = await fetchDecision({
+  const payload = {
     id: `${params.requestId}:request`,
     phase: "request",
+    mode: state.mode,
     tabId,
     url: params.request.url,
     method: params.request.method,
@@ -222,7 +235,15 @@ async function handleRequestPause(tabId, params) {
     requestHeaders: params.request.headers || {},
     requestBody: params.request.postData ?? null,
     timestamp: Date.now(),
-  });
+  };
+
+  if (state.mode === "listen") {
+    fireAndForgetLog(payload);
+    await sendCommand(tabId, "Fetch.continueRequest", { requestId: params.requestId });
+    return;
+  }
+
+  const decision = await fetchDecision(payload);
 
   if (decision.action === "drop") {
     await sendCommand(tabId, "Fetch.failRequest", {
@@ -261,9 +282,10 @@ async function handleResponsePause(tabId, params) {
     responseBodyBase64 = null;
   }
 
-  const decision = await fetchDecision({
+  const payload = {
     id: `${params.requestId}:response`,
     phase: "response",
+    mode: state.mode,
     tabId,
     url: params.request.url,
     method: params.request.method,
@@ -277,7 +299,15 @@ async function handleResponsePause(tabId, params) {
     responseBodyBase64,
     responseBodyIsBase64: responseBodyEncoded,
     timestamp: Date.now(),
-  });
+  };
+
+  if (state.mode === "listen") {
+    fireAndForgetLog(payload);
+    await continueResponse(tabId, params.requestId, params, responseBodyBase64);
+    return;
+  }
+
+  const decision = await fetchDecision(payload);
 
   if (decision.action === "drop") {
     await sendCommand(tabId, "Fetch.failRequest", {
@@ -325,10 +355,11 @@ async function handlePausedRequest(tabId, params) {
 }
 
 chrome.runtime.onInstalled.addListener(() => {
-  chrome.storage.local.get(["webhookUrl", "isEnabled", "attachedTabId"]).then((stored) => {
+  chrome.storage.local.get(["webhookUrl", "isEnabled", "mode", "attachedTabId"]).then((stored) => {
     chrome.storage.local.set({
       webhookUrl: stored.webhookUrl || DEFAULT_ENDPOINT,
       isEnabled: stored.isEnabled === true,
+      mode: stored.mode === "intercept" ? "intercept" : "listen",
       attachedTabId: Number.isInteger(stored.attachedTabId) ? stored.attachedTabId : null,
     });
   });
@@ -375,12 +406,21 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     getTabLabel(state.attachedTabId).then((tabLabel) => {
       sendResponse({
         enabled: state.enabled,
+        mode: state.mode,
         endpoint: state.endpoint,
         attachedTabId: state.attachedTabId,
         attachedTabLabel: tabLabel,
       });
     });
 
+    return true;
+  }
+
+  if (message?.type === "SET_MODE") {
+    state.mode = message.mode === "intercept" ? "intercept" : "listen";
+    persistState().then(() => {
+      sendResponse({ ok: true, mode: state.mode });
+    });
     return true;
   }
 

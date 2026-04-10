@@ -1,4 +1,20 @@
 const pendingIntercepts = new Map();
+const trafficHistory = [];
+const MAX_HISTORY = 100;
+
+export function addTrafficHistory(data) {
+  trafficHistory.push({
+    ...data,
+    recordedAt: Date.now(),
+  });
+  if (trafficHistory.length > MAX_HISTORY) {
+    trafficHistory.shift();
+  }
+}
+
+export function getTrafficHistory() {
+  return trafficHistory;
+}
 
 export function listPendingIntercepts() {
   return Array.from(pendingIntercepts.values()).sort((left, right) => left.createdAt - right.createdAt);

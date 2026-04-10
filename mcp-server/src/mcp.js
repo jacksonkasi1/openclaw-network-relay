@@ -1,7 +1,7 @@
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
-import { getPendingIntercept, listPendingIntercepts, resolvePendingIntercept } from './state.js';
+import { getPendingIntercept, listPendingIntercepts, resolvePendingIntercept, getTrafficHistory } from './state.js';
 
 function serializeIntercept(intercept) {
   return {
@@ -49,6 +49,16 @@ export function startMcpServer() {
           inputSchema: { type: "object", properties: {} },
         },
         {
+          name: "get_traffic_history",
+          description: "List recently logged network requests/responses (both Listen and Intercept modes). Useful for analyzing API structure before intercepting.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              limit: { type: "number", description: "Number of recent items to return (default 50, max 100)" }
+            }
+          }
+        },
+        {
           name: "resolve_request",
           description: "Resolve one paused intercept by forwarding it, dropping it, or modifying the request/response payload.",
           inputSchema: {
@@ -80,6 +90,18 @@ export function startMcpServer() {
       }
 
       return { content: [{ type: "text", text: JSON.stringify(pending, null, 2) }] };
+    }
+
+    if (request.params.name === "get_traffic_history") {
+      const args = request.params.arguments || {};
+      const limit = args.limit ? Math.min(args.limit, 100) : 50;
+      const history = getTrafficHistory().slice(-limit).map(item => serializeIntercept({ id: item.id, data: item, createdAt: item.recordedAt }));
+
+      if (history.length === 0) {
+        return { content: [{ type: "text", text: "No traffic history available yet." }] };
+      }
+
+      return { content: [{ type: "text", text: JSON.stringify(history, null, 2) }] };
     }
 
     if (request.params.name === "resolve_request") {

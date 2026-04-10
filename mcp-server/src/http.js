@@ -1,6 +1,6 @@
 import express from 'express';
 import cors from 'cors';
-import { createPendingIntercept, dropPendingIntercept, markTimedOut } from './state.js';
+import { createPendingIntercept, dropPendingIntercept, markTimedOut, addTrafficHistory } from './state.js';
 
 const DEFAULT_TIMEOUT_MS = 20000;
 
@@ -28,6 +28,13 @@ export function startHttpServer(port = 31337) {
 
     if (!interceptId) {
       res.status(400).json({ error: 'Missing intercept ID' });
+      return;
+    }
+
+    addTrafficHistory(interceptData);
+
+    if (interceptData.mode === 'listen') {
+      res.json({ action: 'forward' });
       return;
     }
 
