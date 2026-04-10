@@ -3,6 +3,14 @@ window.addEventListener('message', (event) => {
     if (event.source !== window) return;
 
     if (event.data && event.data.type === 'OPENCLAW_NETWORK_LOG') {
-        chrome.runtime.sendMessage(event.data);
+        // Send to background script and wait for the Agent's response callback
+        chrome.runtime.sendMessage(event.data, (response) => {
+            // Forward the Agent's decision back to the injected script
+            window.postMessage({
+                type: 'OPENCLAW_INTERCEPT_REPLY',
+                id: event.data.data.id,
+                result: response || { action: 'forward' }
+            }, '*');
+        });
     }
 });

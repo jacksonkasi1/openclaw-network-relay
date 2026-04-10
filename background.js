@@ -15,19 +15,36 @@ chrome.storage.onChanged.addListener((changes) => {
 
 // Listen for messages from our content script
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  // Drop the message immediately if the extension is toggled OFF
-  if (!isEnabled) return;
+  // If extension is OFF, instantly forward the traffic without interception
+  if (!isEnabled) {
+    sendResponse({ action: 'forward' });
+    return true;
+  }
 
   if (message.type === 'OPENCLAW_NETWORK_LOG' && message.data) {
     // Prevent infinite loop by ignoring requests to the webhook itself
     if (message.data.url && message.data.url.startsWith(MCP_ENDPOINT)) {
-      return;
+      sendResponse({ action: 'forward' });
+      return true;
     }
 
+    // Forward the traffic to the AI Agent and wait for its decision
     fetch(MCP_ENDPOINT, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(message.data)
-    }).catch(e => { /* Silently ignore offline server */ });
+    })
+    .then(res => res.json())
+    .then(agentDecision => {
+      // Send the agent's decision back to the webpage script
+      sendResponse(agentDecision);
+    })
+    .catch(e => {
+      // If server is offline, just forward traffic normally so browser doesn't break
+      sendResponse({ action: 'forward' });
+    });
+
+    // Return true to indicate we will send a response asynchronously
+    return true;
   }
 });
