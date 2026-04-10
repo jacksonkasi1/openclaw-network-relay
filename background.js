@@ -9,7 +9,9 @@ const state = {
   attachedTabId: null,
   rules: [],
   ruleSyncInterval: null,
-  ruleSyncInFlight: false
+  ruleSyncInFlight: false,
+  commandStream: null,
+  reconnectTimer: null
 };
 
 function targetForTab(tabId) {
@@ -93,6 +95,68 @@ async function syncRules() {
   }
 }
 
+
+// --- CDP Command Stream ---
+function startCommandStream() {
+  stopCommandStream();
+  if (!isSecureEndpoint(state.endpoint) || !state.attachedTabId) return;
+
+  try {
+    const url = new URL(state.endpoint);
+    url.pathname = '/api/extension/commands';
+    state.commandStream = new EventSource(url.href);
+
+    state.commandStream.onmessage = async (event) => {
+      if (!event.data) return;
+      try {
+        const msg = JSON.parse(event.data);
+        if (msg.id && msg.method) {
+          const tabId = msg.tabId || state.attachedTabId;
+          try {
+            const result = await chrome.debugger.sendCommand({ tabId }, msg.method, msg.params);
+            await sendCdpResult(msg.id, result, null);
+          } catch (e) {
+            await sendCdpResult(msg.id, null, e.message);
+          }
+        }
+      } catch (e) {
+        console.error("Failed to parse CDP command", e);
+      }
+    };
+
+    state.commandStream.onerror = () => {
+      stopCommandStream();
+      state.reconnectTimer = setTimeout(startCommandStream, 3000);
+    };
+  } catch (e) {
+    console.error("Failed to start command stream", e);
+  }
+}
+
+function stopCommandStream() {
+  if (state.commandStream) {
+    state.commandStream.close();
+    state.commandStream = null;
+  }
+  if (state.reconnectTimer) {
+    clearTimeout(state.reconnectTimer);
+    state.reconnectTimer = null;
+  }
+}
+
+async function sendCdpResult(id, result, error) {
+  if (!isSecureEndpoint(state.endpoint)) return;
+  try {
+    const url = new URL(state.endpoint);
+    url.pathname = '/api/extension/cdp-result';
+    await fetch(url.href, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, result, error })
+    });
+  } catch (e) {}
+}
+
 function startRuleSync() {
   if (state.ruleSyncInterval) clearInterval(state.ruleSyncInterval);
   state.ruleSyncInFlight = false;
@@ -142,6 +206,7 @@ async function detachFromTab(tabId) {
     state.attachedTabId = null;
   }
   stopRuleSync();
+  stopCommandStream();
 }
 
 async function attachToTab(tabId) {
@@ -524,6 +589,7 @@ chrome.debugger.onEvent.addListener((source, method, params) => {
 chrome.debugger.onDetach.addListener((source) => {
   if (source.tabId === state.attachedTabId) {
     stopRuleSync();
+    stopCommandStream();
     state.enabled = false;
     state.attachedTabId = null;
     persistState();

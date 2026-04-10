@@ -4,6 +4,7 @@ import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { getPendingIntercept, listPendingIntercepts, resolvePendingIntercept } from './state.js';
 import { getTrafficLogs, getAllRules, addRule, removeRule, organizeLogIntoFolder, clearAllTrafficLogs, clearAllRules } from './db.js';
+import { sendCdpCommand } from './cdp.js';
 
 function serializeIntercept(intercept) {
   return {
@@ -84,6 +85,74 @@ function createMcpServerInstance() {
           description: "Permanently delete ALL Zero-Latency interception rules from the SQLite database.",
           inputSchema: { type: "object", properties: {} }
         },
+
+        {
+          name: "browser_execute_cdp",
+          description: "Execute a raw Chrome DevTools Protocol (CDP) command on the attached browser tab. Requires Intercept mode to be ON in the extension.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              method: { type: "string", description: "CDP method name (e.g. 'Page.navigate')" },
+              params: { type: "object", description: "Parameters for the CDP method" },
+              tabId: { type: "number", description: "Optional specific tab ID. Omit to use the currently attached tab." }
+            },
+            required: ["method"]
+          }
+        },
+        {
+          name: "browser_navigate",
+          description: "Navigate the attached browser tab to a specific URL.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              url: { type: "string" }
+            },
+            required: ["url"]
+          }
+        },
+        {
+          name: "browser_evaluate",
+          description: "Execute JavaScript in the attached browser tab and return the result.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              expression: { type: "string", description: "JavaScript code to evaluate" }
+            },
+            required: ["expression"]
+          }
+        },
+        {
+          name: "browser_screenshot",
+          description: "Take a full page screenshot of the attached browser tab.",
+          inputSchema: {
+            type: "object",
+            properties: {}
+          }
+        },
+        {
+          name: "browser_click",
+          description: "Click an element on the page using a CSS selector.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              selector: { type: "string", description: "CSS selector of the element to click" }
+            },
+            required: ["selector"]
+          }
+        },
+        {
+          name: "browser_type",
+          description: "Type text into an input field on the page using a CSS selector.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              selector: { type: "string", description: "CSS selector of the input element" },
+              text: { type: "string", description: "Text to type" }
+            },
+            required: ["selector", "text"]
+          }
+        },
+
         {
           name: "get_pending_requests",
           description: "List all currently paused browser intercepts. Includes request-phase and response-phase events.",
@@ -181,6 +250,95 @@ function createMcpServerInstance() {
     if (request.params.name === "clear_all_rules") {
       clearAllRules();
       return { content: [{ type: "text", text: "Successfully deleted all zero-latency rules from the database." }] };
+    }
+
+
+    if (request.params.name === "browser_execute_cdp") {
+      const args = request.params.arguments || {};
+      try {
+        const res = await sendCdpCommand(args.tabId || null, args.method, args.params || {});
+        return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+      } catch (e) {
+        return { isError: true, content: [{ type: "text", text: e.message }] };
+      }
+    }
+
+    if (request.params.name === "browser_navigate") {
+      const args = request.params.arguments || {};
+      try {
+        await sendCdpCommand(null, "Page.navigate", { url: args.url });
+        return { content: [{ type: "text", text: `Navigating to ${args.url}...` }] };
+      } catch (e) {
+        return { isError: true, content: [{ type: "text", text: e.message }] };
+      }
+    }
+
+    if (request.params.name === "browser_evaluate") {
+      const args = request.params.arguments || {};
+      try {
+        const res = await sendCdpCommand(null, "Runtime.evaluate", { expression: args.expression, returnByValue: true });
+        if (res.exceptionDetails) {
+           return { isError: true, content: [{ type: "text", text: "Exception: " + res.exceptionDetails.exception.description }] };
+        }
+        return { content: [{ type: "text", text: JSON.stringify(res.result.value, null, 2) }] };
+      } catch (e) {
+        return { isError: true, content: [{ type: "text", text: e.message }] };
+      }
+    }
+
+    if (request.params.name === "browser_screenshot") {
+      try {
+        const res = await sendCdpCommand(null, "Page.captureScreenshot", { format: "png" });
+        return { 
+          content: [
+            { type: "text", text: "Screenshot captured:" },
+            { type: "image", data: res.data, mimeType: "image/png" }
+          ] 
+        };
+      } catch (e) {
+        return { isError: true, content: [{ type: "text", text: e.message }] };
+      }
+    }
+
+    if (request.params.name === "browser_click") {
+      const args = request.params.arguments || {};
+      try {
+        const expression = `
+          (() => {
+            const el = document.querySelector(${JSON.stringify(args.selector)});
+            if (!el) return { error: 'Element not found' };
+            el.scrollIntoView({block: "center", inline: "center"});
+            el.click();
+            return { ok: true };
+          })();
+        `;
+        const res = await sendCdpCommand(null, "Runtime.evaluate", { expression, returnByValue: true });
+        if (res.result?.value?.error) return { isError: true, content: [{ type: "text", text: res.result.value.error }] };
+        return { content: [{ type: "text", text: `Clicked ${args.selector}` }] };
+      } catch (e) {
+        return { isError: true, content: [{ type: "text", text: e.message }] };
+      }
+    }
+
+    if (request.params.name === "browser_type") {
+      const args = request.params.arguments || {};
+      try {
+        const expression = `
+          (() => {
+            const el = document.querySelector('${args.selector.replace(/'/g, "\\'")}');
+            if (!el) return { error: 'Element not found' };
+            el.value = '${args.text.replace(/'/g, "\\\'")}';
+            el.dispatchEvent(new Event('input', { bubbles: true }));
+            el.dispatchEvent(new Event('change', { bubbles: true }));
+            return { ok: true };
+          })();
+        `;
+        const res = await sendCdpCommand(null, "Runtime.evaluate", { expression, returnByValue: true });
+        if (res.result?.value?.error) return { isError: true, content: [{ type: "text", text: res.result.value.error }] };
+        return { content: [{ type: "text", text: `Typed into ${args.selector}` }] };
+      } catch (e) {
+        return { isError: true, content: [{ type: "text", text: e.message }] };
+      }
     }
 
     if (request.params.name === "get_pending_requests") {

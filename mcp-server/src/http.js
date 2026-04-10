@@ -5,6 +5,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { createPendingIntercept, dropPendingIntercept, markTimedOut } from './state.js';
 import { getActiveRules, getAllRules, addTrafficLog, getTrafficLogs, updateRuleState, updateRule, removeRule, clearAllTrafficLogs, clearAllRules } from './db.js';
+import { handleCdpResult, addExtensionStream } from './cdp.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicPath = path.resolve(__dirname, '../public');
@@ -121,6 +122,25 @@ export function createHttpApp() {
       .catch(() => {
         if (!res.writableEnded) res.json(fallbackDecision);
       });
+  });
+
+
+  // --- Extension CDP Command Stream ---
+  app.get('/api/extension/commands', (req, res) => {
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive'
+    });
+    addExtensionStream(res);
+    req.on('close', () => {
+      addExtensionStream(null);
+    });
+  });
+
+  app.post('/api/extension/cdp-result', (req, res) => {
+    handleCdpResult(req.body);
+    res.json({ ok: true });
   });
 
   return app;
