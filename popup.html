@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    body { width: 280px; padding: 10px; font-family: Arial, sans-serif; }
+    input { width: 100%; box-sizing: border-box; margin-bottom: 10px; padding: 5px; }
+    button { width: 100%; padding: 8px; background-color: #ff4500; color: white; border: none; cursor: pointer; font-weight: bold; }
+    button:hover { background-color: #cc3700; }
+  </style>
+</head>
+<body>
+  <h4>OpenClaw MCP Relay</h4>
+  <label for="webhookUrl">Remote VM Webhook URL:</label>
+  <input type="text" id="webhookUrl" placeholder="https://your-ngrok-url.app/log" />
+  <button id="saveBtn">Save & Connect</button>
+  <p id="status" style="color: green; font-size: 12px; text-align: center; margin-top: 10px;"></p>
+  <script src="popup.js"></script>
+</body>
+</html>
