@@ -1,23 +1,25 @@
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
-import { getPendingIntercept, listPendingIntercepts, resolvePendingIntercept, getTrafficHistory, getRules, addRule, removeRule, clearRules } from './state.js';
+import { getPendingIntercept, listPendingIntercepts, resolvePendingIntercept } from './state.js';
+import { getTrafficLogs, getAllRules, addRule, removeRule, organizeLogIntoFolder } from './db.js';
 
 function serializeIntercept(intercept) {
   return {
     id: intercept.id,
-    phase: intercept.data.phase,
-    tabId: intercept.data.tabId,
-    resourceType: intercept.data.resourceType,
-    url: intercept.data.url,
-    method: intercept.data.method,
-    requestHeaders: intercept.data.requestHeaders,
-    requestBody: intercept.data.requestBody,
-    responseStatusCode: intercept.data.responseStatusCode,
-    responseStatusText: intercept.data.responseStatusText,
-    responseHeaders: intercept.data.responseHeaders,
-    responseBody: intercept.data.responseBody,
-    createdAt: new Date(intercept.createdAt).toISOString(),
+    phase: intercept.data?.phase || intercept.phase,
+    tabId: intercept.data?.tabId || intercept.tabId,
+    resourceType: intercept.data?.resourceType || intercept.resourceType,
+    url: intercept.data?.url || intercept.url,
+    method: intercept.data?.method || intercept.method,
+    requestHeaders: intercept.data?.requestHeaders || intercept.requestHeaders,
+    requestBody: intercept.data?.requestBody || intercept.requestBody,
+    responseStatusCode: intercept.data?.responseStatusCode || intercept.responseStatusCode,
+    responseStatusText: intercept.data?.responseStatusText || intercept.responseStatusText,
+    responseHeaders: intercept.data?.responseHeaders || intercept.responseHeaders,
+    responseBody: intercept.data?.responseBody || intercept.responseBody,
+    createdAt: new Date(intercept.createdAt || intercept.timestamp).toISOString(),
+    folder: intercept.data?.folder || intercept.folder
   };
 }
 
@@ -36,7 +38,7 @@ function buildDecision(args) {
 
 export function startMcpServer() {
   const server = new Server(
-    { name: "openclaw-burpsuite-agent", version: "2.0.0" },
+    { name: "openclaw-burpsuite-agent", version: "3.0.0" },
     { capabilities: { tools: {} } }
   );
 
@@ -50,6 +52,7 @@ export function startMcpServer() {
             type: "object",
             properties: {
               name: { type: "string", description: "Readable name for this rule" },
+              folder: { type: "string", description: "Folder/Collection name to group this rule (e.g. 'Firefox', 'Apple')" },
               urlPattern: { type: "string", description: "Substring match for the URL (e.g. '/api/checkout')" },
               method: { type: "string", description: "HTTP method to match (e.g. 'POST', 'GET'). Optional." },
               phase: { type: "string", enum: ["request", "response", "both"], description: "Which phase this rule applies to" },
@@ -82,17 +85,30 @@ export function startMcpServer() {
         },
         {
           name: "get_traffic_history",
-          description: "List recently logged network requests/responses (both Listen and Intercept modes). Useful for analyzing API structure before intercepting.",
+          description: "List recently logged network requests/responses from SQLite DB. Useful for analyzing API structure before intercepting.",
           inputSchema: {
             type: "object",
             properties: {
-              limit: { type: "number", description: "Number of recent items to return (default 50, max 100)" }
+              limit: { type: "number", description: "Number of recent items to return (default 50, max 100)" },
+              folder: { type: "string", description: "Filter by a specific folder/collection name" }
             }
           }
         },
         {
+          name: "organize_traffic_log",
+          description: "Save or categorize a specific traffic log into a folder/collection (e.g. 'Firefox', 'Auth').",
+          inputSchema: {
+            type: "object",
+            properties: {
+              log_id: { type: "string", description: "The ID of the traffic log to organize" },
+              folder: { type: "string", description: "The name of the folder/collection to put it in" }
+            },
+            required: ["log_id", "folder"]
+          }
+        },
+        {
           name: "replay_request",
-          description: "Simulate/Replay a network request directly from the MCP server, exactly like Burp Suite's Repeater. You do not need the user to trigger it in the browser! You can freely specify the URL, method, headers, and body.",
+          description: "Simulate/Replay a network request directly from the MCP server. You do not need the user to trigger it in the browser! You can freely specify the URL, method, headers, and body.",
           inputSchema: {
             type: "object",
             properties: {
@@ -112,13 +128,13 @@ export function startMcpServer() {
             properties: {
               id: { type: "string", description: "The paused intercept ID" },
               action: { type: "string", enum: ["forward", "drop", "modify"], description: "How to continue the intercept" },
-              modifiedMethod: { type: "string", description: "Optional replacement request method for request-phase intercepts" },
-              modifiedUrl: { type: "string", description: "Optional replacement request URL for request-phase intercepts" },
-              modifiedHeaders: { type: "object", description: "Optional replacement request headers object" },
-              modifiedBody: { type: "string", description: "Optional replacement request body" },
-              modifiedStatusCode: { type: "number", description: "Optional replacement response status code for response-phase intercepts" },
-              modifiedResponseHeaders: { type: "object", description: "Optional replacement response headers object" },
-              modifiedResponseBody: { type: "string", description: "Optional replacement response body" }
+              modifiedMethod: { type: "string" },
+              modifiedUrl: { type: "string" },
+              modifiedHeaders: { type: "object" },
+              modifiedBody: { type: "string" },
+              modifiedStatusCode: { type: "number" },
+              modifiedResponseHeaders: { type: "object" },
+              modifiedResponseBody: { type: "string" }
             },
             required: ["id", "action"]
           }
@@ -132,11 +148,11 @@ export function startMcpServer() {
     if (request.params.name === "add_rule") {
       const args = request.params.arguments || {};
       const rule = addRule(args);
-      return { content: [{ type: "text", text: `Successfully deployed rule: ${rule.name} (ID: ${rule.id})` }] };
+      return { content: [{ type: "text", text: `Successfully deployed rule: ${rule.name} (ID: ${rule.id}) to folder '${rule.folder}'` }] };
     }
 
     if (request.params.name === "list_rules") {
-      const rules = getRules();
+      const rules = getAllRules();
       if (rules.length === 0) return { content: [{ type: "text", text: "No rules currently deployed." }] };
       return { content: [{ type: "text", text: JSON.stringify(rules, null, 2) }] };
     }
@@ -149,24 +165,31 @@ export function startMcpServer() {
 
     if (request.params.name === "get_pending_requests") {
       const pending = listPendingIntercepts().map(serializeIntercept);
-
       if (pending.length === 0) {
         return { content: [{ type: "text", text: "No pending requests at the moment." }] };
       }
-
       return { content: [{ type: "text", text: JSON.stringify(pending, null, 2) }] };
     }
 
     if (request.params.name === "get_traffic_history") {
       const args = request.params.arguments || {};
       const limit = args.limit ? Math.min(args.limit, 100) : 50;
-      const history = getTrafficHistory().slice(-limit).map(item => serializeIntercept({ id: item.id, data: item, createdAt: item.recordedAt }));
-
-      if (history.length === 0) {
-        return { content: [{ type: "text", text: "No traffic history available yet." }] };
+      let history = getTrafficLogs(limit).map(serializeIntercept);
+      
+      if (args.folder) {
+        history = history.filter(h => h.folder === args.folder);
       }
 
+      if (history.length === 0) {
+        return { content: [{ type: "text", text: "No traffic history available." }] };
+      }
       return { content: [{ type: "text", text: JSON.stringify(history, null, 2) }] };
+    }
+
+    if (request.params.name === "organize_traffic_log") {
+      const { log_id, folder } = request.params.arguments || {};
+      const success = organizeLogIntoFolder(log_id, folder);
+      return { content: [{ type: "text", text: success ? `Saved log ${log_id} to folder ${folder}` : `Log not found` }] };
     }
 
     if (request.params.name === "replay_request") {
@@ -182,7 +205,6 @@ export function startMcpServer() {
         if (headers) {
           for (const [key, value] of Object.entries(headers)) {
             const lowerKey = key.toLowerCase();
-            // Don't forward pseudo-headers or headers that break native fetch
             if (!lowerKey.startsWith(":") && !["host", "content-length", "connection"].includes(lowerKey)) {
               options.headers[key] = value;
             }
@@ -213,24 +235,16 @@ export function startMcpServer() {
       const intercept = getPendingIntercept(args.id);
 
       if (!intercept) {
-        return {
-          isError: true,
-          content: [{ type: "text", text: `Intercept ${args.id} not found or already resolved.` }],
-        };
+        return { isError: true, content: [{ type: "text", text: `Intercept ${args.id} not found or already resolved.` }] };
       }
 
       const resolved = resolvePendingIntercept(args.id, buildDecision(args));
 
       if (!resolved) {
-        return {
-          isError: true,
-          content: [{ type: "text", text: `Intercept ${args.id} was no longer pending.` }],
-        };
+        return { isError: true, content: [{ type: "text", text: `Intercept ${args.id} was no longer pending.` }] };
       }
 
-      return {
-        content: [{ type: "text", text: `Resolved ${args.id} (${intercept.data.phase}) with action ${args.action}.` }],
-      };
+      return { content: [{ type: "text", text: `Resolved ${args.id} (${intercept.data.phase}) with action ${args.action}.` }] };
     }
 
     throw new Error(`Tool not found: ${request.params.name}`);

@@ -1,21 +1,4 @@
-import { randomUUID } from 'crypto';
 const pendingIntercepts = new Map();
-const trafficHistory = [];
-const MAX_HISTORY = 100;
-
-export function addTrafficHistory(data) {
-  trafficHistory.push({
-    ...data,
-    recordedAt: Date.now(),
-  });
-  if (trafficHistory.length > MAX_HISTORY) {
-    trafficHistory.shift();
-  }
-}
-
-export function getTrafficHistory() {
-  return trafficHistory;
-}
 
 export function listPendingIntercepts() {
   return Array.from(pendingIntercepts.values()).sort((left, right) => left.createdAt - right.createdAt);
@@ -73,20 +56,6 @@ export function resolvePendingIntercept(id, result) {
   return true;
 }
 
-export function rejectPendingIntercept(id, error) {
-  const intercept = pendingIntercepts.get(id);
-
-  if (!intercept || intercept.status !== "pending") {
-    return false;
-  }
-
-  intercept.status = "rejected";
-  clearTimeout(intercept.timeoutId);
-  pendingIntercepts.delete(id);
-  intercept.reject(error);
-  return true;
-}
-
 export function dropPendingIntercept(id) {
   const intercept = pendingIntercepts.get(id);
 
@@ -97,27 +66,4 @@ export function dropPendingIntercept(id) {
   clearTimeout(intercept.timeoutId);
   pendingIntercepts.delete(id);
   return true;
-}
-
-let rules = [];
-
-export function getRules() {
-  return rules;
-}
-
-export function addRule(rule) {
-  const id = randomUUID();
-  const newRule = { id, ...rule, createdAt: Date.now() };
-  rules.push(newRule);
-  return newRule;
-}
-
-export function removeRule(id) {
-  const initialLength = rules.length;
-  rules = rules.filter(r => r.id !== id);
-  return rules.length < initialLength;
-}
-
-export function clearRules() {
-  rules = [];
 }

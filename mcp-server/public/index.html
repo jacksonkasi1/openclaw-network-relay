@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>OpenClaw Interceptor Dashboard</title>
+  <style>
+    body { background: #1e1e1e; color: #d4d4d4; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; margin: 0; display: flex; height: 100vh; }
+    .sidebar { width: 250px; background: #252526; padding: 20px; box-sizing: border-box; border-right: 1px solid #3c3c3c; display: flex; flex-direction: column; }
+    .main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+    h2, h3 { color: #fff; margin-top: 0; }
+    .nav { display: flex; background: #2d2d30; padding: 10px; gap: 10px; border-bottom: 1px solid #3c3c3c; }
+    .nav button { background: #3e3e42; color: #fff; border: 1px solid transparent; padding: 8px 16px; cursor: pointer; border-radius: 4px; font-weight: bold; }
+    .nav button:hover { background: #4a4a4f; }
+    .nav button.active { background: #0e639c; }
+    
+    .content { flex: 1; padding: 20px; overflow-y: auto; display: none; }
+    .content.active { display: block; }
+    
+    .card { background: #252526; padding: 15px; margin-bottom: 15px; border-radius: 6px; border: 1px solid #3c3c3c; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+    .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; border-bottom: 1px solid #3c3c3c; padding-bottom: 10px; }
+    .tag { background: #0e639c; padding: 3px 8px; border-radius: 12px; font-size: 11px; margin-right: 5px; font-weight: bold; color: #fff;}
+    .tag.folder { background: #d7ba7d; color: #1e1e1e; }
+    .tag.method { background: #4ec9b0; color: #1e1e1e; }
+    .tag.action { background: #c586c0; color: #fff; }
+    .tag.status-ok { background: #89d185; color: #1e1e1e; }
+    .tag.status-err { background: #f48771; color: #1e1e1e; }
+    
+    pre { background: #1e1e1e; padding: 10px; border-radius: 4px; overflow-x: auto; font-size: 13px; border: 1px solid #3c3c3c; color: #ce9178; }
+    
+    .folder-list { list-style: none; padding: 0; margin: 0; flex: 1; overflow-y: auto; }
+    .folder-list li { padding: 10px; cursor: pointer; border-radius: 4px; margin-bottom: 5px; font-size: 14px; }
+    .folder-list li:hover { background: #2a2d2e; }
+    .folder-list li.active { background: #37373d; color: #fff; font-weight: bold; border-left: 3px solid #0e639c; }
+
+    .switch { position: relative; display: inline-block; width: 34px; height: 20px; }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #ccc; transition: .4s; border-radius: 20px; }
+    .slider:before { position: absolute; content: ""; height: 12px; width: 12px; left: 4px; bottom: 4px; background-color: white; transition: .4s; border-radius: 50%; }
+    input:checked + .slider { background-color: #0e639c; }
+    input:checked + .slider:before { transform: translateX(14px); }
+    
+    .btn-danger { background: #c24038; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; }
+    .btn-danger:hover { background: #a12b24; }
+  </style>
+</head>
+<body>
+
+  <div class="sidebar">
+    <h2>Collections</h2>
+    <ul class="folder-list" id="folderList">
+      <li class="active" data-folder="All">All</li>
+      <li data-folder="Inbox">Inbox</li>
+      <li data-folder="Uncategorized">Uncategorized</li>
+    </ul>
+  </div>
+
+  <div class="main">
+    <div class="nav">
+      <button class="active" onclick="switchTab('logs')">Traffic Logs</button>
+      <button onclick="switchTab('rules')">Zero-Latency Rules</button>
+    </div>
+
+    <!-- Traffic Logs Tab -->
+    <div id="logs" class="content active">
+      <h3>Recent Traffic Logs</h3>
+      <div id="logsContainer">Loading logs...</div>
+    </div>
+
+    <!-- Rules Tab -->
+    <div id="rules" class="content">
+      <h3>Active Interception Rules</h3>
+      <p style="font-size: 13px; color: #9cdcfe;">These rules are synchronized to the Chrome extension and execute in 0ms.</p>
+      <div id="rulesContainer">Loading rules...</div>
+    </div>
+  </div>
+
+  <script>
+    let currentFolder = 'All';
+
+    async function fetchData(url) {
+      const res = await fetch(url);
+      return res.json();
+    }
+
+    function switchTab(tabId) {
+      document.querySelectorAll('.content').forEach(el => el.classList.remove('active'));
+      document.querySelectorAll('.nav button').forEach(el => el.classList.remove('active'));
+      document.getElementById(tabId).classList.add('active');
+      event.target.classList.add('active');
+      loadData();
+    }
+
+    function formatTime(ts) {
+      return new Date(ts).toLocaleTimeString();
+    }
+
+    async function toggleRule(id, isActive) {
+      await fetch(`/api/rules/${id}/toggle`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isActive })
+      });
+    }
+
+    async function deleteRule(id) {
+      if(confirm('Delete this rule?')) {
+        await fetch(`/api/rules/${id}`, { method: 'DELETE' });
+        loadData();
+      }
+    }
+
+    function renderRules(rules) {
+      const container = document.getElementById('rulesContainer');
+      container.innerHTML = '';
+      
+      const filtered = currentFolder === 'All' ? rules : rules.filter(r => r.folder === currentFolder);
+      if (filtered.length === 0) {
+        container.innerHTML = '<p>No rules found.</p>';
+        return;
+      }
+
+      filtered.forEach(rule => {
+        const card = document.createElement('div');
+        card.className = 'card';
+        card.innerHTML = `
+          <div class="card-header">
+            <div>
+              <strong>${rule.name}</strong>
+              <span class="tag folder">${rule.folder}</span>
+              <span class="tag action">${rule.action.toUpperCase()}</span>
+            </div>
+            <div style="display:flex; gap:10px; align-items:center;">
+              <label class="switch">
+                <input type="checkbox" ${rule.isActive ? 'checked' : ''} onchange="toggleRule('${rule.id}', this.checked)">
+                <span class="slider"></span>
+              </label>
+              <button class="btn-danger" onclick="deleteRule('${rule.id}')">Delete</button>
+            </div>
+          </div>
+          <div style="font-size:13px;">
+            <p><strong>Match:</strong> ${rule.method || 'ANY'} ${rule.urlPattern}</p>
+            ${rule.modifiedBody ? `<p><strong>Override Body:</strong></p><pre>${rule.modifiedBody}</pre>` : ''}
+            ${rule.modifiedResponseBody ? `<p><strong>Override Response Body:</strong></p><pre>${rule.modifiedResponseBody}</pre>` : ''}
+          </div>
+        `;
+        container.appendChild(card);
+      });
+    }
+
+    function renderLogs(logs) {
+      const container = document.getElementById('logsContainer');
+      container.innerHTML = '';
+      
+      const filtered = currentFolder === 'All' ? logs : logs.filter(l => l.folder === currentFolder);
+      if (filtered.length === 0) {
+        container.innerHTML = '<p>No traffic logs found.</p>';
+        return;
+      }
+
+      filtered.forEach(log => {
+        const card = document.createElement('div');
+        card.className = 'card';
+        const isErr = log.responseStatusCode >= 400;
+        card.innerHTML = `
+          <div class="card-header">
+            <div style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 80%;">
+              <span class="tag method">${log.method}</span>
+              <span class="tag ${isErr ? 'status-err' : 'status-ok'}">${log.responseStatusCode || '...'}</span>
+              <strong style="font-size: 13px;">${log.url}</strong>
+            </div>
+            <div style="font-size: 12px; color: #858585;">
+              ${formatTime(log.timestamp)}
+            </div>
+          </div>
+          <div style="font-size:13px;">
+            <span class="tag folder">${log.folder}</span>
+            <span class="tag">Mode: ${log.mode}</span>
+            ${log.requestBody ? `<details><summary style="cursor:pointer; margin-top:5px; color:#4fc1ff;">Show Request Body</summary><pre>${log.requestBody}</pre></details>` : ''}
+            ${log.responseBody ? `<details><summary style="cursor:pointer; margin-top:5px; color:#4fc1ff;">Show Response Body</summary><pre>${log.responseBody}</pre></details>` : ''}
+          </div>
+        `;
+        container.appendChild(card);
+      });
+    }
+
+    function updateFolders(rules, logs) {
+      const folders = new Set(['All']);
+      rules.forEach(r => folders.add(r.folder));
+      logs.forEach(l => folders.add(l.folder));
+      
+      const list = document.getElementById('folderList');
+      list.innerHTML = '';
+      
+      folders.forEach(f => {
+        const li = document.createElement('li');
+        li.textContent = f;
+        li.dataset.folder = f;
+        if(f === currentFolder) li.classList.add('active');
+        
+        li.onclick = () => {
+          currentFolder = f;
+          document.querySelectorAll('.folder-list li').forEach(el => el.classList.remove('active'));
+          li.classList.add('active');
+          loadData();
+        };
+        list.appendChild(li);
+      });
+    }
+
+    async function loadData() {
+      const [rules, logs] = await Promise.all([
+        fetchData('/api/rules'),
+        fetchData('/api/logs')
+      ]);
+      
+      updateFolders(rules, logs);
+      renderRules(rules);
+      renderLogs(logs);
+    }
+
+    // Auto-refresh every 3 seconds
+    setInterval(loadData, 3000);
+    loadData();
+  </script>
+</body>
+</html>

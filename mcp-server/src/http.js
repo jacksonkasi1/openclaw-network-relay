@@ -1,14 +1,14 @@
 import express from 'express';
 import cors from 'cors';
-import { createPendingIntercept, dropPendingIntercept, markTimedOut, addTrafficHistory, getRules } from './state.js';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { createPendingIntercept, dropPendingIntercept, markTimedOut } from './state.js';
+import { getActiveRules, getAllRules, addTrafficLog, getTrafficLogs, updateRuleState, removeRule } from './db.js';
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DEFAULT_TIMEOUT_MS = 20000;
 
 function fallbackDecisionForPhase(phase) {
-  if (phase === 'response') {
-    return { action: 'forward' };
-  }
-
   return { action: 'forward' };
 }
 
@@ -17,15 +17,25 @@ export function startHttpServer(port = 31337) {
 
   app.use(cors());
   app.use(express.json({ limit: '50mb' }));
+  app.use(express.static(path.join(__dirname, '../public'))); // Serve the web dashboard
 
-  app.get('/health', (_req, res) => {
+  // Health and Rule sync endpoints for the Chrome Extension
+  app.get('/health', (_req, res) => res.json({ ok: true }));
+  app.get('/rules', (_req, res) => res.json(getActiveRules()));
+
+  // Internal API for the Web Dashboard
+  app.get('/api/rules', (_req, res) => res.json(getAllRules()));
+  app.get('/api/logs', (_req, res) => res.json(getTrafficLogs()));
+  app.post('/api/rules/:id/toggle', (req, res) => {
+    updateRuleState(req.params.id, req.body.isActive);
+    res.json({ ok: true });
+  });
+  app.delete('/api/rules/:id', (req, res) => {
+    removeRule(req.params.id);
     res.json({ ok: true });
   });
 
-  app.get('/rules', (_req, res) => {
-    res.json(getRules());
-  });
-
+  // The main endpoint the extension hits for traffic
   app.post('/log', (req, res) => {
     const interceptData = req.body;
     const interceptId = interceptData?.id;
@@ -35,8 +45,9 @@ export function startHttpServer(port = 31337) {
       return;
     }
 
-    addTrafficHistory(interceptData);
+    addTrafficLog(interceptData); // Store persistently in SQLite
 
+    // If extension is purely listening or already applied a rule locally, just return forward immediately
     if (interceptData.mode === 'listen' || interceptData.appliedRule) {
       res.json({ action: 'forward' });
       return;
@@ -57,18 +68,14 @@ export function startHttpServer(port = 31337) {
 
     intercept.promise
       .then((decision) => {
-        if (!res.writableEnded) {
-          res.json(decision);
-        }
+        if (!res.writableEnded) res.json(decision);
       })
       .catch(() => {
-        if (!res.writableEnded) {
-          res.json(fallbackDecision);
-        }
+        if (!res.writableEnded) res.json(fallbackDecision);
       });
   });
 
   app.listen(port, () => {
-    console.error(`[HTTP] MCP bridge listening on port ${port}`);
+    console.error(`[HTTP] OpenClaw Dashboard and MCP bridge listening on http://127.0.0.1:${port}`);
   });
 }

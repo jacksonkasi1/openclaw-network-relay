@@ -4,7 +4,8 @@
     "openclaw-interceptor": {
       "type": "local",
       "command": [
-        "node",
+        "bun",
+        "run",
         "./mcp-server/src/index.js"
       ],
       "enabled": true,
