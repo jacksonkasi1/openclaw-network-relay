@@ -572,7 +572,30 @@ chrome.runtime.onStartup.addListener(() => {
 
 loadSettings();
 
-chrome.debugger.onEvent.addListener((source, method, params) => {
+
+async function sendCdpEvent(event, params) {
+  if (!isSecureEndpoint(state.endpoint)) return;
+  try {
+    const url = new URL(state.endpoint);
+    url.pathname = '/api/extension/cdp-result';
+    await fetch(url.href, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ event, params })
+    });
+  } catch (e) {}
+}
+
+chrome.debugger.onEvent.addListener(async (source, method, params) => {
+  // If attachedTabId matches, send event over
+  if (state.attachedTabId && source.tabId === state.attachedTabId) {
+    if (method.startsWith('Fetch.') || method.startsWith('Network.')) {
+      // Existing OpenClaw handling handles these
+    } else {
+      await sendCdpEvent(method, params);
+    }
+  }
+
   if (method !== "Fetch.requestPaused" || source.tabId == null) {
     return;
   }

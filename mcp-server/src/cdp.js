@@ -1,3 +1,6 @@
+import { EventEmitter } from 'events';
+
+export const cdpEvents = new EventEmitter();
 let extensionStream = null;
 const pendingCommands = new Map();
 let nextCommandId = 1;
@@ -15,7 +18,13 @@ export function addExtensionStream(res) {
 }
 
 export function handleCdpResult(body) {
-  const { id, result, error } = body;
+  const { id, result, error, event, params } = body;
+  
+  if (event) {
+    cdpEvents.emit('event', { event, params });
+    return;
+  }
+
   const p = pendingCommands.get(id);
   if (p) {
     pendingCommands.delete(id);
@@ -39,7 +48,6 @@ export function sendCdpCommand(tabId, method, params = {}) {
     const payload = JSON.stringify({ id, tabId, method, params });
     extensionStream.write(`data: ${payload}\n\n`);
 
-    // Timeout after 15 seconds
     setTimeout(() => {
       if (pendingCommands.has(id)) {
         pendingCommands.delete(id);
