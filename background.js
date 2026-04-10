@@ -426,6 +426,19 @@ async function handlePausedRequest(tabId, params) {
     return;
   }
 
+  // Prevent logging or intercepting traffic going to the MCP bridge/dashboard itself
+  try {
+    const reqUrl = params.request?.url || "";
+    const parsedUrl = new URL(reqUrl);
+    const endpointUrl = new URL(state.endpoint);
+    if (parsedUrl.origin === endpointUrl.origin) {
+      await continuePausedRequest(tabId, params);
+      return;
+    }
+  } catch (e) {
+    // Ignore parsing errors
+  }
+
   const isResponsePhase = params.responseStatusCode !== undefined || params.responseErrorReason !== undefined;
 
   if (isResponsePhase) {
