@@ -101,6 +101,7 @@
   <script>
     let currentFolder = 'All';
     let allRulesData = [];
+    let editingRules = new Set();
 
     function escapeHTML(str) {
       if (str == null) return '';
@@ -133,6 +134,9 @@
       if (event && event.target) {
         event.target.classList.add('active');
       }
+      if (tabId !== 'rules') {
+        editingRules.clear();
+      }
       loadData();
     }
 
@@ -151,11 +155,16 @@
     function openRuleEdit(id) {
       document.getElementById('rule-display-' + id).style.display = 'none';
       document.getElementById('rule-edit-' + id).style.display = 'block';
+      editingRules.add(id);
     }
 
     function cancelRuleEdit(id) {
       document.getElementById('rule-display-' + id).style.display = 'block';
       document.getElementById('rule-edit-' + id).style.display = 'none';
+      editingRules.delete(id);
+      if (editingRules.size === 0) {
+        renderRules(allRulesData);
+      }
     }
 
     async function saveRuleEdit(id) {
@@ -179,6 +188,7 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
         });
+        editingRules.delete(id);
         loadData();
       } catch (e) {
         alert('Failed to save rule: ' + e.message);
@@ -188,6 +198,7 @@
     async function deleteRule(id) {
       if(confirm('Delete this rule?')) {
         await fetch(`/api/rules/${id}`, { method: 'DELETE' });
+        editingRules.delete(id);
         loadData();
       }
     }
@@ -202,6 +213,7 @@
     async function clearAllRules() {
       if(confirm('Are you sure you want to clear ALL interception rules permanently?')) {
         await fetch('/api/rules', { method: 'DELETE' });
+        editingRules.clear();
         loadData();
       }
     }
@@ -325,6 +337,7 @@
           currentFolder = f;
           document.querySelectorAll('.folder-list li').forEach(el => el.classList.remove('active'));
           li.classList.add('active');
+          editingRules.clear();
           loadData();
         };
         list.appendChild(li);
@@ -339,7 +352,11 @@
       
       allRulesData = rules;
       updateFolders(rules, logs);
-      renderRules(rules);
+      
+      if (editingRules.size === 0) {
+        renderRules(rules);
+      }
+      
       renderLogs(logs);
     }
 
