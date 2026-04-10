@@ -59,6 +59,20 @@ export function startMcpServer() {
           }
         },
         {
+          name: "replay_request",
+          description: "Simulate/Replay a network request directly from the MCP server, exactly like Burp Suite's Repeater. You do not need the user to trigger it in the browser! You can freely specify the URL, method, headers, and body.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              url: { type: "string", description: "The full URL to send the request to" },
+              method: { type: "string", description: "HTTP method (GET, POST, PUT, etc.)" },
+              headers: { type: "object", description: "HTTP headers object (including Cookies, Authorization, etc.)" },
+              body: { type: "string", description: "Stringified request body (optional)" }
+            },
+            required: ["url", "method"]
+          }
+        },
+        {
           name: "resolve_request",
           description: "Resolve one paused intercept by forwarding it, dropping it, or modifying the request/response payload.",
           inputSchema: {
@@ -102,6 +116,45 @@ export function startMcpServer() {
       }
 
       return { content: [{ type: "text", text: JSON.stringify(history, null, 2) }] };
+    }
+
+    if (request.params.name === "replay_request") {
+      const args = request.params.arguments || {};
+      const { url, method, headers, body } = args;
+
+      try {
+        const options = {
+          method: method ? method.toUpperCase() : "GET",
+          headers: {}
+        };
+
+        if (headers) {
+          for (const [key, value] of Object.entries(headers)) {
+            const lowerKey = key.toLowerCase();
+            // Don't forward pseudo-headers or headers that break native fetch
+            if (!lowerKey.startsWith(":") && !["host", "content-length", "connection"].includes(lowerKey)) {
+              options.headers[key] = value;
+            }
+          }
+        }
+
+        if (body && !["GET", "HEAD"].includes(options.method)) {
+          options.body = typeof body === "string" ? body : JSON.stringify(body);
+        }
+
+        const response = await fetch(url, options);
+        const responseText = await response.text();
+        const responseHeaders = Object.fromEntries(response.headers.entries());
+
+        const result = {
+          request: { url, method: options.method, headers: options.headers, body: options.body },
+          response: { status: response.status, statusText: response.statusText, headers: responseHeaders, body: responseText }
+        };
+
+        return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+      } catch (err) {
+        return { isError: true, content: [{ type: "text", text: `Error replaying request: ${err.message}` }] };
+      }
     }
 
     if (request.params.name === "resolve_request") {
