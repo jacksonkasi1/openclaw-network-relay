@@ -12,9 +12,10 @@ You have three main workflows:
 
 ### Workflow 1: Inspecting Traffic History
 When the user wants to see what happened or find an endpoint:
-1. Call `get_traffic_history` to see a log of recent requests and responses.
-2. Analyze the URLs, methods, headers, and bodies.
-3. Show the user the relevant endpoint details.
+1. Call `get_traffic_history` with `light_mode: true` to get a fast, truncated overview of URLs and methods without overwhelming your context window with massive bodies.
+2. Filter the history aggressively using `url_filter` (e.g. "display_name") or `method_filter`.
+3. Once you find the exact log ID you care about, call `get_traffic_history` again with `log_id: "the-specific-id"` to get the full JSON request and response bodies.
+4. Show the user the relevant endpoint details.
 
 ### Workflow 2: Repeater (Simulating Requests)
 When the user wants to "replay", "simulate", or "copy that request and do its own changes" exactly like Burp Suite's Repeater:

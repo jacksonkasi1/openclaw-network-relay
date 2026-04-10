@@ -90,12 +90,16 @@ export function startMcpServer() {
         },
         {
           name: "get_traffic_history",
-          description: "List recently logged network requests/responses from SQLite DB. Useful for analyzing API structure before intercepting.",
+          description: "List recently logged network requests/responses from SQLite DB. Use filters or light_mode to avoid overwhelming context with massive payloads.",
           inputSchema: {
             type: "object",
             properties: {
               limit: { type: "number", description: "Number of recent items to return (default 50, max 100)" },
-              folder: { type: "string", description: "Filter by a specific folder/collection name" }
+              folder: { type: "string", description: "Filter by a specific folder/collection name" },
+              url_filter: { type: "string", description: "Only return requests where the URL contains this string" },
+              method_filter: { type: "string", description: "Only return requests with this HTTP method (e.g. 'POST')" },
+              light_mode: { type: "boolean", description: "If true, omits request and response bodies to save context space. Highly recommended for general exploration!" },
+              log_id: { type: "string", description: "Fetch the full details of one specific log by its ID." }
             }
           }
         },
@@ -191,12 +195,29 @@ export function startMcpServer() {
       const limit = args.limit ? Math.min(args.limit, 100) : 50;
       let history = getTrafficLogs(limit).map(serializeIntercept);
       
-      if (args.folder) {
-        history = history.filter(h => h.folder === args.folder);
+      if (args.log_id) {
+        history = history.filter(h => h.id === args.log_id);
+      } else {
+        if (args.folder) {
+          history = history.filter(h => h.folder === args.folder);
+        }
+        if (args.url_filter) {
+          history = history.filter(h => h.url.includes(args.url_filter));
+        }
+        if (args.method_filter) {
+          history = history.filter(h => h.method.toUpperCase() === args.method_filter.toUpperCase());
+        }
+        if (args.light_mode) {
+          history = history.map(h => ({
+            ...h,
+            requestBody: h.requestBody ? `[Omitted in light_mode - Size: ${h.requestBody.length} chars]` : null,
+            responseBody: h.responseBody ? `[Omitted in light_mode - Size: ${h.responseBody.length} chars]` : null
+          }));
+        }
       }
 
       if (history.length === 0) {
-        return { content: [{ type: "text", text: "No traffic history available." }] };
+        return { content: [{ type: "text", text: "No traffic history available matching filters." }] };
       }
       return { content: [{ type: "text", text: JSON.stringify(history, null, 2) }] };
     }
