@@ -20,7 +20,7 @@ function fallbackDecisionForPhase(phase) {
 export function createHttpApp() {
   const app = express();
 
-  app.use(cors({ origin: ['http://127.0.0.1:31337', 'http://localhost:31337'] }));
+  app.use(cors()); // Allow tunnel domains
   app.use(express.json({ limit: '50mb' }));
   app.use(express.static(publicPath)); // Serve the web dashboard
 
