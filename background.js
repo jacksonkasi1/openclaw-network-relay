@@ -767,8 +767,8 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           return;
         }
 
-        state.enabled = true;
         await attachToTab(tabId);
+        state.enabled = true;
       } else {
         await detachFromTab(state.attachedTabId);
         state.enabled = false;
@@ -776,7 +776,10 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
       await persistState();
       sendResponse({ ok: true, enabled: state.enabled, attachedTabId: state.attachedTabId });
-    })().catch((error) => {
+    })().catch(async (error) => {
+      state.enabled = false;
+      state.attachedTabId = null;
+      await persistState();
       sendResponse({ ok: false, error: error?.message || String(error) });
     });
 
