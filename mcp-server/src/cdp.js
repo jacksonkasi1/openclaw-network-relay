@@ -44,7 +44,7 @@ export function handleCdpResult(body) {
 export function sendCdpCommand(tabId, method, params = {}) {
   return new Promise((resolve, reject) => {
     const trySend = (attempts = 0) => {
-      if (!extensionStream) {
+      if (!extensionStream || extensionStream.writableEnded || extensionStream.destroyed) {
         if (attempts < 10) {
           setTimeout(() => trySend(attempts + 1), 500);
           return;

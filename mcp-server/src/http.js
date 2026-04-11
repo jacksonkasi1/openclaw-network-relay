@@ -128,36 +128,42 @@ export function createHttpApp() {
   // --- Extension CDP Command Stream ---
   app.get('/api/extension/commands', (req, res) => {
     res.writeHead(200, {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
+      'Content-Type': 'text/event-stream; charset=utf-8',
+      'Cache-Control': 'no-cache, no-transform',
       'Connection': 'keep-alive',
       'X-Accel-Buffering': 'no'
     });
+
     if (typeof res.flushHeaders === 'function') {
       res.flushHeaders();
     }
-    if (req.socket && req.socket.setKeepAlive) req.socket.setKeepAlive(true, 15000);
-    if (req.socket && req.socket.setNoDelay) req.socket.setNoDelay(true);
+
+    if (req.socket?.setKeepAlive) req.socket.setKeepAlive(true, 15000);
+    if (req.socket?.setNoDelay) req.socket.setNoDelay(true);
+
+    res.write('retry: 1000\n');
     res.write('event: ready\ndata: {"ok":true}\n\n');
+    if (typeof res.flush === 'function') res.flush();
+
     addExtensionStream(res);
 
     const pingInterval = setInterval(() => {
       try {
         res.write(`event: ping\ndata: {"ts":${Date.now()}}\n\n`);
+        if (typeof res.flush === 'function') res.flush();
       } catch (e) {}
     }, 15000);
 
-    req.on('close', () => {
+    const cleanup = () => {
       clearInterval(pingInterval);
       clearExtensionStream(res);
-    });
+    };
 
-    res.on('error', () => {
-      clearInterval(pingInterval);
-      clearExtensionStream(res);
-    });
+    req.on('close', cleanup);
+    req.on('aborted', cleanup);
+    res.on('close', cleanup);
+    res.on('error', cleanup);
   });
-
 
   app.post('/api/extension/cdp-result', (req, res) => {
     handleCdpResult(req.body);
