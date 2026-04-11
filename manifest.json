@@ -3,15 +3,8 @@
   "name": "OpenClaw Network Relay",
   "version": "2.0.0",
   "description": "Burp-style network interception for a single tab, controlled by a remote MCP agent",
-  "permissions": [
-    "storage",
-    "tabs",
-    "activeTab",
-    "debugger"
-  ],
-  "host_permissions": [
-    "<all_urls>"
-  ],
+  "permissions": ["storage", "tabs", "activeTab", "debugger", "alarms"],
+  "host_permissions": ["<all_urls>"],
   "background": {
     "service_worker": "background.js"
   },

@@ -2,20 +2,44 @@ const DEFAULT_ENDPOINT = "http://127.0.0.1:31337/log";
 const DEBUGGER_VERSION = "1.3";
 const DECISION_TIMEOUT_MS = 20000;
 
-// MANIFEST V3 KEEPALIVE HACK
-// Service workers are killed after 30s of inactivity.
-// We force it to stay alive by periodically pinging a trivial Chrome API.
+// MANIFEST V3 KEEPALIVE — TWO LAYERS
+// 1. setInterval pings Chrome every 20s to keep a LIVE SW alive.
+// 2. chrome.alarms fires every ~20s and WAKES the SW if Chrome killed it.
+//    Alarms survive SW termination; setInterval does not.
 let keepAliveInterval = null;
-let streamGeneration = 0;
 
 function ensureWorkerAlive() {
+  // Layer 1: keep a running SW alive
   if (keepAliveInterval) clearInterval(keepAliveInterval);
   keepAliveInterval = setInterval(() => {
-    if (state.enabled) {
-      chrome.runtime.getPlatformInfo(() => {});
-    }
-  }, 20000); // every 20 seconds
+    if (state.enabled) chrome.runtime.getPlatformInfo(() => {});
+  }, 20000);
+
+  // Layer 2: schedule a wake-up alarm (non-repeating so we can use sub-minute
+  // delays on unpacked extensions; we reschedule in the handler).
+  chrome.alarms.create("keepAlive", { delayInMinutes: 0.33 }); // ~20 s
 }
+
+// Must be registered at top-level (not inside a function) to survive SW restarts.
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name !== "keepAlive") return;
+
+  // Ping a Chrome API so the SW stays awake for the next interval.
+  chrome.runtime.getPlatformInfo(() => {});
+
+  if (state.enabled) {
+    // If the SW was killed and just woke up, the command stream will be gone.
+    // Re-establish it immediately so MCP calls can resume.
+    if (!state.commandStream && state.attachedTabId && state.endpoint) {
+      console.log("[Alarm] SW woke up — command stream missing, reconnecting…");
+      startCommandStream();
+    }
+  }
+
+  // Reschedule (non-repeating alarms work at sub-minute granularity for
+  // unpacked/dev extensions; repeating alarms require ≥1 min in production).
+  chrome.alarms.create("keepAlive", { delayInMinutes: 0.33 });
+});
 
 const state = {
   endpoint: DEFAULT_ENDPOINT,

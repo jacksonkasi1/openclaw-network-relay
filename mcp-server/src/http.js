@@ -180,10 +180,19 @@ export function createHttpApp() {
 
     const pingInterval = setInterval(() => {
       try {
-        res.write(`event: ping\ndata: {"ts":${Date.now()}}\n\n`);
+        const ok = res.write(`event: ping\ndata: {"ts":${Date.now()}}\n\n`);
         if (typeof res.flush === "function") res.flush();
-      } catch (e) {}
-    }, 15000);
+        // If write() returns false the socket is congested or dead — tear down now
+        // so extensionStream is nulled and sendCdpCommand retries immediately.
+        if (ok === false) {
+          cleanup();
+          clearInterval(pingInterval);
+        }
+      } catch (e) {
+        cleanup();
+        clearInterval(pingInterval);
+      }
+    }, 8000);
 
     const cleanup = () => {
       clearInterval(pingInterval);

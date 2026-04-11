@@ -14,6 +14,8 @@ export function addExtensionStream(res) {
     }
     extensionStream = res;
     console.error("[CDP] Extension connected to command stream.");
+    // Wake up any sendCdpCommand calls that are waiting for the stream to come back.
+    cdpEvents.emit("streamConnected");
   }
 }
 
@@ -45,6 +47,11 @@ export function handleCdpResult(body) {
 
 export function sendCdpCommand(tabId, method, params = {}) {
   return new Promise((resolve, reject) => {
+    // Maximum number of 500 ms polling slots to wait for the stream.
+    // 40 × 500 ms = 20 s, giving the MV3 service worker enough time to be
+    // woken by the chrome.alarms keepalive and re-establish the SSE stream.
+    const MAX_ATTEMPTS = 40;
+
     const trySend = (attempts = 0) => {
       // Also treat a writableEnded / destroyed stream as "not connected" so we
       // don't silently swallow writes on Bun where write() may not throw.
@@ -62,15 +69,31 @@ export function sendCdpCommand(tabId, method, params = {}) {
           } catch {}
           extensionStream = null;
         }
-        if (attempts < 10) {
-          setTimeout(() => trySend(attempts + 1), 500);
-          return;
+        if (attempts >= MAX_ATTEMPTS) {
+          return reject(
+            new Error(
+              "Chrome Extension is not connected to the command stream. Is the extension turned ON and attached to a tab?",
+            ),
+          );
         }
-        return reject(
-          new Error(
-            "Chrome Extension is not connected to the command stream. Is the extension turned ON and attached to a tab?",
-          ),
-        );
+        // Wait for whichever comes first: the stream reconnecting (instant wake)
+        // or a 500 ms polling timeout.  This way MCP calls resume the moment
+        // the extension SSE stream re-establishes rather than waiting a full
+        // polling tick.
+        let settled = false;
+        const onConnect = () => {
+          if (settled) return;
+          settled = true;
+          trySend(attempts + 1);
+        };
+        cdpEvents.once("streamConnected", onConnect);
+        setTimeout(() => {
+          if (settled) return;
+          settled = true;
+          cdpEvents.removeListener("streamConnected", onConnect);
+          trySend(attempts + 1);
+        }, 500);
+        return;
       }
 
       const id = nextCommandId++;
@@ -83,6 +106,25 @@ export function sendCdpCommand(tabId, method, params = {}) {
         pendingCommands.delete(id);
         if (attempts < 10) {
           setTimeout(() => trySend(attempts + 1), 500);
+          return;
+        }
+        // Stream write failed — null it out so the next trySend treats it as
+        // disconnected and waits for a fresh reconnect.
+        extensionStream = null;
+        if (attempts < MAX_ATTEMPTS) {
+          let settled = false;
+          const onConnect = () => {
+            if (settled) return;
+            settled = true;
+            trySend(attempts + 1);
+          };
+          cdpEvents.once("streamConnected", onConnect);
+          setTimeout(() => {
+            if (settled) return;
+            settled = true;
+            cdpEvents.removeListener("streamConnected", onConnect);
+            trySend(attempts + 1);
+          }, 500);
           return;
         }
         return reject(
