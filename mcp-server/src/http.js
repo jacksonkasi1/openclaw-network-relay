@@ -132,8 +132,15 @@ export function createHttpApp() {
       'Cache-Control': 'no-cache',
       'Connection': 'keep-alive'
     });
+    res.write(':\n\n'); // send initial flush
     addExtensionStream(res);
+    
+    const pingInterval = setInterval(() => {
+      res.write(':\n\n');
+    }, 10000);
+
     req.on('close', () => {
+      clearInterval(pingInterval);
       addExtensionStream(null);
     });
   });
