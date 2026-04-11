@@ -1,4 +1,45 @@
 export const MCP_TOOLS = [
+
+        {
+          name: "browser_new_tab",
+          description: "Open a new background tab in the attached browser.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              url: { type: "string", description: "URL to open in the new tab" }
+            },
+            required: ["url"]
+          }
+        },
+        {
+          name: "browser_close_tab",
+          description: "Close a specific tab in the attached browser.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              tabId: { type: "number", description: "The ID of the tab to close. Defaults to the currently attached tab." }
+            }
+          }
+        },
+        {
+          name: "browser_switch_tab",
+          description: "Bring a specific tab to the foreground and make it the active tab.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              tabId: { type: "number", description: "The ID of the tab to activate." }
+            },
+            required: ["tabId"]
+          }
+        },
+        {
+          name: "browser_list_tabs",
+          description: "Get a list of all open tabs in the browser, including their IDs, titles, and URLs.",
+          inputSchema: {
+            type: "object",
+            properties: {}
+          }
+        },
         {
           name: "db_sql_query",
           description: "Execute a raw, read-only SQL SELECT query against the high-performance local SQLite database. Gives you MAXIMUM control to filter or analyze network traffic! Tables available:\n1. 'rules' (id, name, folder, urlPattern, method, phase, action, modifiedBody, isActive, createdAt)\n2. 'traffic_logs' (id, folder, phase, mode, url, method, requestHeaders, requestBody, responseStatusCode, responseHeaders, responseBody, timestamp)",

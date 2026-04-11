@@ -137,6 +137,47 @@ function createMcpServerInstance() {
       }
     }
 
+
+    if (request.params.name === "browser_new_tab") {
+      const args = request.params.arguments || {};
+      try {
+        const res = await sendCdpCommand(null, "Target.createTarget", { url: args.url });
+        return { content: [{ type: "text", text: "Successfully created new tab and attached to it. Target ID: " + res.targetId + " Tab ID: " + res.tabId }] };
+      } catch (e) {
+        return { isError: true, content: [{ type: "text", text: e.message }] };
+      }
+    }
+
+    if (request.params.name === "browser_close_tab") {
+      const args = request.params.arguments || {};
+      try {
+        await sendCdpCommand(null, "Target.closeTarget", { tabId: args.tabId });
+        return { content: [{ type: "text", text: "Successfully closed tab." }] };
+      } catch (e) {
+        return { isError: true, content: [{ type: "text", text: e.message }] };
+      }
+    }
+
+    if (request.params.name === "browser_switch_tab") {
+      const args = request.params.arguments || {};
+      try {
+        await sendCdpCommand(null, "Target.activateTarget", { tabId: args.tabId });
+        return { content: [{ type: "text", text: "Successfully focused tab." }] };
+      } catch (e) {
+        return { isError: true, content: [{ type: "text", text: e.message }] };
+      }
+    }
+
+    if (request.params.name === "browser_list_tabs") {
+      try {
+        const res = await sendCdpCommand(null, "Target.getTabs", {});
+        const tabs = res.tabs.map(t => ({ id: t.id, windowId: t.windowId, title: t.title, url: t.url, active: t.active, status: t.status }));
+        return { content: [{ type: "text", text: JSON.stringify(tabs, null, 2) }] };
+      } catch (e) {
+        return { isError: true, content: [{ type: "text", text: e.message }] };
+      }
+    }
+
     if (request.params.name === "browser_navigate") {
       const args = request.params.arguments || {};
       try {
