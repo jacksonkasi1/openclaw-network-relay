@@ -8,3 +8,7 @@ reports/
 
 # Autonomous AI Workspaces
 hunting/
+
+# macOS
+.DS_Store
+**/.DS_Store
