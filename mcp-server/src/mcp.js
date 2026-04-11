@@ -366,6 +366,99 @@ function createMcpServerInstance() {
       }
     }
 
+    
+    if (request.params.name === "browser_upload_file") {
+      const args = request.params.arguments || {};
+      try {
+        const expression = `
+          (() => {
+            let el;
+            if (${JSON.stringify(args.id)} != null && window.__openclawInteractables) {
+               el = window.__openclawInteractables.get(Number(${JSON.stringify(args.id)}));
+            } else if (${JSON.stringify(args.selector)}) {
+               el = document.querySelector(${JSON.stringify(args.selector)});
+            }
+            if (!el) return { error: 'Element not found!' };
+            return el;
+          })();
+        `;
+        const res = await sendCdpCommand(null, "Runtime.evaluate", { expression, returnByValue: false });
+        if (res.result?.value?.error) return { isError: true, content: [{ type: "text", text: res.result.value.error }] };
+        if (!res.result?.objectId) return { isError: true, content: [{ type: "text", text: "Could not get objectId for element." }] };
+        
+        const path = await import('path');
+        const huntingDir = path.resolve(process.cwd(), '../hunting');
+        const filePath = path.resolve(huntingDir, args.filename);
+        
+        await sendCdpCommand(null, "DOM.enable", {});
+        await sendCdpCommand(null, "DOM.setFileInputFiles", {
+          files: [filePath],
+          objectId: res.result.objectId
+        });
+        
+        return { content: [{ type: "text", text: `Successfully uploaded file: ${filePath}` }] };
+      } catch (e) {
+        return { isError: true, content: [{ type: "text", text: e.message }] };
+      }
+    }
+
+    if (request.params.name === "browser_download_file") {
+      const args = request.params.arguments || {};
+      try {
+        const path = await import('path');
+        const huntingDir = path.resolve(process.cwd(), '../hunting');
+        
+        // Use Page.setDownloadBehavior
+        await sendCdpCommand(null, "Page.setDownloadBehavior", {
+          behavior: "allow",
+          downloadPath: huntingDir
+        });
+
+        // Click the element
+        const expression = `
+          (() => {
+            let el;
+            if (${JSON.stringify(args.id)} != null && window.__openclawInteractables) {
+               el = window.__openclawInteractables.get(Number(${JSON.stringify(args.id)}));
+            } else if (${JSON.stringify(args.selector)}) {
+               el = document.querySelector(${JSON.stringify(args.selector)});
+            }
+            if (!el) return { error: 'Element not found!' };
+            el.click();
+            return { ok: true };
+          })();
+        `;
+        const res = await sendCdpCommand(null, "Runtime.evaluate", { expression, returnByValue: true });
+        if (res.result?.value?.error) return { isError: true, content: [{ type: "text", text: res.result.value.error }] };
+        
+        return { content: [{ type: "text", text: `Download triggered. Files will be saved to: ${huntingDir}` }] };
+      } catch (e) {
+        return { isError: true, content: [{ type: "text", text: e.message }] };
+      }
+    }
+
+    if (request.params.name === "browser_get_cookies") {
+      try {
+        const res = await sendCdpCommand(null, "Network.getCookies", {});
+        return { content: [{ type: "text", text: JSON.stringify(res.cookies || [], null, 2) }] };
+      } catch (e) {
+        return { isError: true, content: [{ type: "text", text: e.message }] };
+      }
+    }
+
+    if (request.params.name === "browser_set_cookies") {
+      const args = request.params.arguments || {};
+      try {
+        if (!args.cookies || !Array.isArray(args.cookies)) {
+          return { isError: true, content: [{ type: "text", text: "Invalid cookies array provided." }] };
+        }
+        await sendCdpCommand(null, "Network.setCookies", { cookies: args.cookies });
+        return { content: [{ type: "text", text: "Cookies set successfully." }] };
+      } catch (e) {
+        return { isError: true, content: [{ type: "text", text: e.message }] };
+      }
+    }
+
     if (request.params.name === "browser_type") {
       const args = request.params.arguments || {};
       try {
@@ -565,3 +658,33 @@ export function startMcpServer(app) {
     await sseTransport.handlePostMessage(req, res);
   });
 }
+
+
+
+import { cdpEvents } from './cdp.js';
+import { randomUUID } from "crypto";
+
+const wsUrls = new Map();
+
+cdpEvents.on('event', ({ event, params }) => {
+  if (event === "Network.webSocketCreated") {
+    wsUrls.set(params.requestId, params.url);
+  }
+  if (event === "Network.webSocketFrameSent" || event === "Network.webSocketFrameReceived") {
+    const isSent = event === "Network.webSocketFrameSent";
+    const payloadData = params.response?.payloadData || "";
+    const url = wsUrls.get(params.requestId) || 'ws-req-' + params.requestId;
+    
+    import('./db.js').then(({ addTrafficLog }) => {
+      addTrafficLog({
+        id: randomUUID(),
+        phase: isSent ? 'WebSocket:Sent' : 'WebSocket:Received',
+        method: isSent ? 'WSS_SEND' : 'WSS_RECV',
+        url: url,
+        requestBody: isSent ? payloadData : undefined,
+        responseBody: !isSent ? payloadData : undefined,
+        mode: 'listen'
+      });
+    });
+  }
+});

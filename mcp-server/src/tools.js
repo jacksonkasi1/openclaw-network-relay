@@ -172,6 +172,61 @@ export const MCP_TOOLS = [
           }
         },
         {
+          name: "browser_upload_file",
+          description: "Upload a file from the local /hunting directory to a file input element.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              id: { type: "number", description: "Numeric ID from browser_extract_dom" },
+              selector: { type: "string", description: "CSS selector fallback" },
+              filename: { type: "string", description: "Name of the file in the /hunting directory" }
+            },
+            required: ["filename"]
+          }
+        },
+        {
+          name: "browser_download_file",
+          description: "Click an element that triggers a download and save the file to the local /hunting directory.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              id: { type: "number", description: "Numeric ID of the download link/button" },
+              selector: { type: "string", description: "CSS selector fallback" }
+            }
+          }
+        },
+        {
+          name: "browser_get_cookies",
+          description: "Get all browser cookies for the current page.",
+          inputSchema: {
+            type: "object",
+            properties: {}
+          }
+        },
+        {
+          name: "browser_set_cookies",
+          description: "Set or modify cookies.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              cookies: { 
+                type: "array", 
+                items: {
+                  type: "object",
+                  properties: {
+                    name: { type: "string" },
+                    value: { type: "string" },
+                    domain: { type: "string" },
+                    path: { type: "string" }
+                  },
+                  required: ["name", "value"]
+                }
+              }
+            },
+            required: ["cookies"]
+          }
+        },
+        {
           name: "browser_type",
           description: "Type text into an input field. You can use EITHER the numeric 'id' returned from browser_extract_dom (markdown format), OR a standard CSS 'selector'. Prefer the numeric ID.",
           inputSchema: {

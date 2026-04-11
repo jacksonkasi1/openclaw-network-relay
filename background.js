@@ -148,6 +148,9 @@ function startCommandStream() {
                         if (!tab.id) throw new Error('Failed to create tab');
                         await new Promise(r => setTimeout(r, 200));
                         await chrome.debugger.attach({ tabId: tab.id }, DEBUGGER_VERSION).catch(()=>null);
+                        await chrome.debugger.sendCommand({ tabId: tab.id }, 'Page.enable').catch(()=>null);
+                        await chrome.debugger.sendCommand({ tabId: tab.id }, 'Network.enable').catch(()=>null);
+                        await chrome.debugger.sendCommand({ tabId: tab.id }, 'Page.addScriptToEvaluateOnNewDocument', { source: "Object.defineProperty(navigator, 'webdriver', { get: () => false }); window.chrome = window.chrome || {}; window.chrome.runtime = window.chrome.runtime || {};" }).catch(()=>null);
                         const info = await chrome.debugger.sendCommand({ tabId: tab.id }, 'Target.getTargetInfo').catch(()=>null);
                         const targetId = String(info?.targetInfo?.targetId || '').trim();
                         await sendCdpResult(msg.id, { targetId, tabId: tab.id }, null);
@@ -299,6 +302,12 @@ async function attachToTab(tabId) {
       throw error;
     }
   }
+
+  await sendCommand(tabId, "Page.enable");
+  await sendCommand(tabId, "Network.enable");
+  await sendCommand(tabId, "Page.addScriptToEvaluateOnNewDocument", {
+    source: "Object.defineProperty(navigator, 'webdriver', { get: () => false }); window.chrome = window.chrome || {}; window.chrome.runtime = window.chrome.runtime || {};"
+  });
 
   await sendCommand(tabId, "Fetch.enable", {
     patterns: [
@@ -666,7 +675,7 @@ async function sendCdpEvent(event, params) {
 chrome.debugger.onEvent.addListener(async (source, method, params) => {
   // If attachedTabId matches, send event over
   if (state.attachedTabId && source.tabId === state.attachedTabId) {
-    if (method.startsWith('Fetch.') || method.startsWith('Network.')) {
+    if (method.startsWith('Fetch.') || (method.startsWith('Network.') && method !== 'Network.webSocketFrameSent' && method !== 'Network.webSocketFrameReceived' && method !== 'Network.webSocketCreated')) {
       // Existing OpenClaw handling handles these
     } else {
       await sendCdpEvent(method, params);
