@@ -4,7 +4,7 @@ import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { getPendingIntercept, listPendingIntercepts, resolvePendingIntercept } from './state.js';
 import { getTrafficLogs, getAllRules, addRule, removeRule, organizeLogIntoFolder, clearAllTrafficLogs, clearAllRules, executeRawQuery } from './db.js';
-import { sendCdpCommand, normalizeCDPResult } from './cdp.js';
+import { sendCdpCommand } from './cdp.js';
 import { MCP_TOOLS } from './tools.js';
 
 
@@ -199,8 +199,7 @@ function createMcpServerInstance() {
         if (res.exceptionDetails) {
            return { isError: true, content: [{ type: "text", text: "Exception: " + res.exceptionDetails.exception.description }] };
         }
-        const val = normalizeCDPResult(res.result);
-        return { content: [{ type: "text", text: val }] };
+        return { content: [{ type: "text", text: JSON.stringify(res.result.value, null, 2) }] };
       } catch (e) {
         return { isError: true, content: [{ type: "text", text: e.message }] };
       }
@@ -264,8 +263,7 @@ function createMcpServerInstance() {
         if (res.exceptionDetails) {
            return { isError: true, content: [{ type: "text", text: "Exception: " + res.exceptionDetails.exception.description }] };
         }
-        const val = normalizeCDPResult(res.result);
-        return { content: [{ type: "text", text: val }] };
+        return { content: [{ type: "text", text: JSON.stringify(res.result.value, null, 2) }] };
       } catch (e) {
         return { isError: true, content: [{ type: "text", text: e.message }] };
       }
@@ -499,53 +497,33 @@ function createMcpServerInstance() {
 
     if (request.params.name === "get_traffic_history") {
       const args = request.params.arguments || {};
-      
-      if (args.includeBodies || args.log_id) {
-        return { isError: true, content: [{ type: "text", text: "Bodies and full details require log_id via the get_traffic_detail tool. get_traffic_history is strictly for lightweight listing." }] };
-      }
-
       const limit = args.limit ? Math.max(1, Math.min(args.limit, 100)) : 50;
-
+      
+      // Fetch more initially so we can filter properly before limiting
       let history = getTrafficLogs(1000).map(serializeIntercept);
-
-      if (args.folder) {
-        history = history.filter(h => h.folder === args.folder);
-      }
-      if (args.url_filter) {
-        history = history.filter(h => h.url && h.url.includes(args.url_filter));
-      }
-      if (args.method_filter) {
-        history = history.filter(h => h.method && h.method.toUpperCase() === args.method_filter.toUpperCase());
-      }
-
-      // STRICT SAFE LIST MODE (No bodies, no raw headers)
-      history = history.map(h => {
-        let contentType = undefined;
-        let host = undefined;
-        let hasAuth = false;
-        
-        if (h.requestHeaders) {
-           Object.keys(h.requestHeaders).forEach(k => {
-             const lowerK = k.toLowerCase();
-             if (lowerK === 'content-type') contentType = h.requestHeaders[k];
-             if (lowerK === 'host') host = h.requestHeaders[k];
-             if (lowerK === 'authorization') hasAuth = true;
-           });
+      
+      if (args.log_id) {
+        history = history.filter(h => h.id === args.log_id);
+      } else {
+        if (args.folder) {
+          history = history.filter(h => h.folder === args.folder);
         }
-        return {
-          id: h.id,
-          ts: h.createdAt,
-          method: h.method,
-          url: h.url,
-          status: h.responseStatusCode,
-          reqBytes: h.requestBody ? h.requestBody.length : 0,
-          resBytes: h.responseBody ? h.responseBody.length : 0,
-          contentType,
-          host,
-          hasAuth
-        };
-      });
-
+        if (args.url_filter) {
+          history = history.filter(h => h.url && h.url.includes(args.url_filter));
+        }
+        if (args.method_filter) {
+          history = history.filter(h => h.method && h.method.toUpperCase() === args.method_filter.toUpperCase());
+        }
+        if (args.light_mode) {
+          history = history.map(h => ({
+            ...h,
+            requestBody: h.requestBody ? `[Omitted in light_mode - Size: ${h.requestBody.length} chars]` : null,
+            responseBody: h.responseBody ? `[Omitted in light_mode - Size: ${h.responseBody.length} chars]` : null
+          }));
+        }
+      }
+      
+      // Slice after filtering
       history = history.slice(0, limit);
 
       if (history.length === 0) {
@@ -553,58 +531,6 @@ function createMcpServerInstance() {
       }
       return { content: [{ type: "text", text: JSON.stringify(history, null, 2) }] };
     }
-
-    if (request.params.name === "get_traffic_detail") {
-      const args = request.params.arguments || {};
-      const { log_id } = args;
-      if (!log_id) {
-         return { isError: true, content: [{ type: "text", text: "log_id is required" }] };
-      }
-
-      const logEntry = getTrafficLogs(1000).map(serializeIntercept).find(h => h.id === log_id);
-      
-      if (!logEntry) {
-        return { content: [{ type: "text", text: "Log not found" }] };
-      }
-
-      function sanitizeHeaders(headers) {
-        if (!headers) return {};
-        const safe = {};
-        Object.keys(headers).forEach(k => {
-          const lowerK = k.toLowerCase();
-          if (lowerK === 'host') safe.host = headers[k];
-          if (lowerK === 'content-type') safe.contentType = headers[k];
-          if (lowerK === 'authorization') {
-             safe.authorization = headers[k].split(' ')[0] + " ***[redacted]***";
-          }
-        });
-        return safe;
-      }
-
-      function truncateBody(body, max = 2000) {
-        if (!body) return { preview: "", truncated: false, originalLength: 0 };
-        if (body.length <= max) {
-          return { preview: body, truncated: false, originalLength: body.length };
-        }
-        return { preview: body.slice(0, max), truncated: true, originalLength: body.length };
-      }
-
-      const detail = {
-        id: logEntry.id,
-        request: {
-          headers: sanitizeHeaders(logEntry.requestHeaders),
-          body: truncateBody(logEntry.requestBody, 2000)
-        },
-        response: {
-          status: logEntry.responseStatusCode,
-          headers: sanitizeHeaders(logEntry.responseHeaders),
-          body: truncateBody(logEntry.responseBody, 2000)
-        }
-      };
-
-      return { content: [{ type: "text", text: JSON.stringify(detail, null, 2) }] };
-    }
-
 
     if (request.params.name === "organize_traffic_log") {
       const { log_id, folder } = request.params.arguments || {};
