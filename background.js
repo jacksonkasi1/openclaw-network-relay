@@ -201,13 +201,13 @@ function startCommandStream() {
 
       if (state.enabled && state.commandStream === controller) {
         console.error("Command stream disconnected. Reconnecting...");
-        state.reconnectTimer = setTimeout(startCommandStream, 3000);
+        state.reconnectTimer = setTimeout(startCommandStream, 1000);
       }
     }).catch(e => {
       if (e.name !== 'AbortError') {
         console.error("Command stream disconnected:", e.message);
         if (state.enabled) {
-          state.reconnectTimer = setTimeout(startCommandStream, 3000);
+          state.reconnectTimer = setTimeout(startCommandStream, 1000);
         }
       }
     });

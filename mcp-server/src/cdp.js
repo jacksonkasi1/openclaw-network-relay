@@ -19,7 +19,7 @@ export function addExtensionStream(res) {
 
 export function handleCdpResult(body) {
   const { id, result, error, event, params } = body;
-  
+
   if (event) {
     cdpEvents.emit('event', { event, params });
     return;
@@ -38,25 +38,40 @@ export function handleCdpResult(body) {
 
 export function sendCdpCommand(tabId, method, params = {}) {
   return new Promise((resolve, reject) => {
-    if (!extensionStream) {
-      return reject(new Error("Chrome Extension is not connected to the command stream. Is the extension turned ON and attached to a tab?"));
-    }
-
-    const id = nextCommandId++;
-    pendingCommands.set(id, { resolve, reject });
-
-    const payload = JSON.stringify({ id, tabId, method, params });
-    extensionStream.write(`data: ${payload}\n\n`);
-
-    setTimeout(() => {
-      if (pendingCommands.has(id)) {
-        pendingCommands.delete(id);
-        reject(new Error(`CDP Command ${method} timed out after 15s`));
+    const trySend = (attempts = 0) => {
+      if (!extensionStream) {
+        if (attempts < 10) {
+          setTimeout(() => trySend(attempts + 1), 500);
+          return;
+        }
+        return reject(new Error("Chrome Extension is not connected to the command stream. Is the extension turned ON and attached to a tab?"));
       }
-    }, 15000);
+
+      const id = nextCommandId++;
+      pendingCommands.set(id, { resolve, reject });
+
+      const payload = JSON.stringify({ id, tabId, method, params });
+      try {
+        extensionStream.write(`data: ${payload}\n\n`);
+      } catch (e) {
+        if (attempts < 10) {
+          setTimeout(() => trySend(attempts + 1), 500);
+          return;
+        }
+        return reject(new Error("Failed to write to extension stream: " + e.message));
+      }
+
+      setTimeout(() => {
+        if (pendingCommands.has(id)) {
+          pendingCommands.delete(id);
+          reject(new Error(`CDP Command ${method} timed out after 15s`));
+        }
+      }, 15000);
+    };
+
+    trySend();
   });
 }
-
 
 export function safeSerialize(value) {
   if (value === undefined) {
