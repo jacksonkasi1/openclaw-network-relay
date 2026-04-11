@@ -104,75 +104,114 @@ function startCommandStream() {
   try {
     const url = new URL(state.endpoint);
     url.pathname = '/api/extension/commands';
-    state.commandStream = new EventSource(url.href);
+    
+    const controller = new AbortController();
+    state.commandStream = controller;
 
-    state.commandStream.onmessage = async (event) => {
-      if (!event.data) return;
-      try {
-        const msg = JSON.parse(event.data);
-        if (msg.id && msg.method) {
-          try {
-            const isTabCommand = msg.method === "Target.createTarget" || msg.method === "Target.closeTarget" || msg.method === "Target.activateTarget" || msg.method === "Target.getTabs";
-            
-            if (isTabCommand) {
-              if (msg.method === "Target.createTarget") {
-                const url = typeof msg.params?.url === 'string' ? msg.params.url : 'about:blank';
-                const tab = await chrome.tabs.create({ url, active: false });
-                if (!tab.id) throw new Error('Failed to create tab');
-                await new Promise(r => setTimeout(r, 200));
-                await chrome.debugger.attach({ tabId: tab.id }, DEBUGGER_VERSION).catch(()=>null);
-                const info = await chrome.debugger.sendCommand({ tabId: tab.id }, 'Target.getTargetInfo').catch(()=>null);
-                const targetId = String(info?.targetInfo?.targetId || '').trim();
-                await sendCdpResult(msg.id, { targetId, tabId: tab.id }, null);
-                return;
-              }
-              if (msg.method === "Target.closeTarget") {
-                const targetTabId = msg.params?.tabId || state.attachedTabId;
-                await chrome.tabs.remove(targetTabId).catch(()=>null);
-                await sendCdpResult(msg.id, { success: true }, null);
-                return;
-              }
-              if (msg.method === "Target.activateTarget") {
-                const targetTabId = msg.params?.tabId || state.attachedTabId;
-                const tab = await chrome.tabs.get(targetTabId).catch(() => null);
-                if (tab && tab.windowId) {
-                  await chrome.windows.update(tab.windowId, { focused: true }).catch(() => {});
+    fetch(url.href, {
+      signal: controller.signal,
+      headers: { 'Accept': 'text/event-stream' }
+    }).then(async response => {
+      if (!response.ok) {
+        throw new Error("Command stream HTTP error " + response.status);
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder('utf-8');
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const parts = buffer.split('\n\n');
+        buffer = parts.pop() || ''; // Keep the last incomplete chunk
+
+        for (const chunk of parts) {
+          const lines = chunk.split('\n');
+          for (const line of lines) {
+            if (line.startsWith('data:')) {
+              const dataStr = line.slice(5).trim();
+              if (!dataStr) continue;
+
+              try {
+                const msg = JSON.parse(dataStr);
+                if (msg.id && msg.method) {
+                  try {
+                    const isTabCommand = msg.method === "Target.createTarget" || msg.method === "Target.closeTarget" || msg.method === "Target.activateTarget" || msg.method === "Target.getTabs";
+
+                    if (isTabCommand) {
+                      if (msg.method === "Target.createTarget") {
+                        const url = typeof msg.params?.url === 'string' ? msg.params.url : 'about:blank';
+                        const tab = await chrome.tabs.create({ url, active: false });
+                        if (!tab.id) throw new Error('Failed to create tab');
+                        await new Promise(r => setTimeout(r, 200));
+                        await chrome.debugger.attach({ tabId: tab.id }, DEBUGGER_VERSION).catch(()=>null);
+                        const info = await chrome.debugger.sendCommand({ tabId: tab.id }, 'Target.getTargetInfo').catch(()=>null);
+                        const targetId = String(info?.targetInfo?.targetId || '').trim();
+                        await sendCdpResult(msg.id, { targetId, tabId: tab.id }, null);
+                        continue;
+                      }
+                      if (msg.method === "Target.closeTarget") {
+                        const targetTabId = msg.params?.tabId || state.attachedTabId;
+                        await chrome.tabs.remove(targetTabId).catch(()=>null);
+                        await sendCdpResult(msg.id, { success: true }, null);
+                        continue;
+                      }
+                      if (msg.method === "Target.activateTarget") {
+                        const targetTabId = msg.params?.tabId || state.attachedTabId;
+                        const tab = await chrome.tabs.get(targetTabId).catch(() => null);
+                        if (tab && tab.windowId) {
+                          await chrome.windows.update(tab.windowId, { focused: true }).catch(() => {});
+                        }
+                        await chrome.tabs.update(targetTabId, { active: true }).catch(() => {});
+                        await sendCdpResult(msg.id, { success: true }, null);
+                        continue;
+                      }
+                      if (msg.method === "Target.getTabs") {
+                         const allTabs = await chrome.tabs.query({});
+                         await sendCdpResult(msg.id, { tabs: allTabs }, null);
+                         continue;
+                      }
+                    }
+
+                    const tabId = msg.params?.tabId || msg.tabId || state.attachedTabId;
+                    const result = await chrome.debugger.sendCommand({ tabId }, msg.method, msg.params);
+                    await sendCdpResult(msg.id, result, null);
+                  } catch (e) {
+                    await sendCdpResult(msg.id, null, e.message);
+                  }
                 }
-                await chrome.tabs.update(targetTabId, { active: true }).catch(() => {});
-                await sendCdpResult(msg.id, { success: true }, null);
-                return;
-              }
-              if (msg.method === "Target.getTabs") {
-                 const allTabs = await chrome.tabs.query({});
-                 await sendCdpResult(msg.id, { tabs: allTabs }, null);
-                 return;
+              } catch (e) {
+                console.error("Failed to parse CDP command", e);
               }
             }
-
-            const tabId = msg.params?.tabId || msg.tabId || state.attachedTabId;
-            const result = await chrome.debugger.sendCommand({ tabId }, msg.method, msg.params);
-            await sendCdpResult(msg.id, result, null);
-          } catch (e) {
-            await sendCdpResult(msg.id, null, e.message);
           }
         }
-      } catch (e) {
-        console.error("Failed to parse CDP command", e);
       }
-    };
 
-    state.commandStream.onerror = () => {
-      stopCommandStream();
-      state.reconnectTimer = setTimeout(startCommandStream, 3000);
-    };
+      if (state.enabled && state.commandStream === controller) {
+        console.error("Command stream disconnected. Reconnecting...");
+        state.reconnectTimer = setTimeout(startCommandStream, 3000);
+      }
+    }).catch(e => {
+      if (e.name !== 'AbortError') {
+        console.error("Command stream disconnected:", e.message);
+        if (state.enabled) {
+          state.reconnectTimer = setTimeout(startCommandStream, 3000);
+        }
+      }
+    });
+
   } catch (e) {
-    console.error("Failed to start command stream", e);
+    console.error("Command stream init error:", e.message);
   }
 }
 
 function stopCommandStream() {
   if (state.commandStream) {
-    state.commandStream.close();
+    state.commandStream.abort(); // Cancel the fetch request
     state.commandStream = null;
   }
   if (state.reconnectTimer) {
