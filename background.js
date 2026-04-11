@@ -7,6 +7,7 @@ const DECISION_TIMEOUT_MS = 20000;
 // Service workers are killed after 30s of inactivity.
 // We force it to stay alive by periodically pinging a trivial Chrome API.
 let keepAliveInterval = null;
+let streamGeneration = 0;
 
 function ensureWorkerAlive() {
   if (keepAliveInterval) clearInterval(keepAliveInterval);
@@ -120,6 +121,7 @@ function startCommandStream() {
   if (!state.endpoint) return;
 
   try {
+    const generation = ++streamGeneration;
     let baseUrlStr = state.endpoint;
     if (baseUrlStr.endsWith('/log')) baseUrlStr = baseUrlStr.replace('/log', '');
     const url = new URL(baseUrlStr);
@@ -134,6 +136,9 @@ function startCommandStream() {
     }).then(async response => {
       if (!response.ok) {
         throw new Error("Command stream HTTP error " + response.status);
+      }
+      if (!response.body) {
+        throw new Error("Command stream missing response body");
       }
 
       const reader = response.body.getReader();
@@ -150,10 +155,16 @@ function startCommandStream() {
 
         for (const chunk of parts) {
           const lines = chunk.split('\n');
+          let eventName = 'message';
           for (const line of lines) {
+            if (line.startsWith('event:')) {
+              eventName = line.slice(6).trim() || 'message';
+              continue;
+            }
             if (line.startsWith('data:')) {
               const dataStr = line.slice(5).trim();
               if (!dataStr) continue;
+              if (eventName === 'ping' || eventName === 'ready') continue;
 
               try {
                 const msg = JSON.parse(dataStr);
@@ -214,14 +225,14 @@ function startCommandStream() {
         }
       }
 
-      if (state.enabled && state.commandStream === controller) {
+      if (state.enabled && state.commandStream === controller && generation === streamGeneration) {
         console.error("Command stream disconnected. Reconnecting...");
         state.reconnectTimer = setTimeout(startCommandStream, 1000);
       }
     }).catch(e => {
       if (e.name !== 'AbortError') {
         console.error("Command stream disconnected:", e.message);
-        if (state.enabled) {
+        if (state.enabled && state.commandStream === controller && generation === streamGeneration) {
           state.reconnectTimer = setTimeout(startCommandStream, 1000);
         }
       }
@@ -237,6 +248,7 @@ function stopCommandStream() {
     state.commandStream.abort(); // Cancel the fetch request
     state.commandStream = null;
   }
+  streamGeneration++;
   if (state.reconnectTimer) {
     clearTimeout(state.reconnectTimer);
     state.reconnectTimer = null;

@@ -59,6 +59,7 @@ export function sendCdpCommand(tabId, method, params = {}) {
       try {
         extensionStream.write(`data: ${payload}\n\n`);
       } catch (e) {
+        pendingCommands.delete(id);
         if (attempts < 10) {
           setTimeout(() => trySend(attempts + 1), 500);
           return;
