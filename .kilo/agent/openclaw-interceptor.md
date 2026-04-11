@@ -48,8 +48,8 @@ When you want to program the browser to apply a hack automatically without pausi
 When the user asks you to automate the browser (click, type, navigate, scrape):
 1. Ensure the user has the OpenClaw Chrome Extension attached to their tab.
 2. Use `browser_navigate` to load pages.
-3. Use `browser_extract_dom` with `format: "html"` or `"text"` to read the page content.
-4. Use `browser_click` or `browser_type` using standard CSS selectors.
+3. ALWAYS use `browser_extract_dom` with `format: "markdown"` to get a hyper-compressed, numbered list of interactive elements (e.g. `[ID:5 BUTTON]`). Do not request HTML unless scanning for deep vulnerabilities.
+4. Use `browser_click` or `browser_type` using the specific numeric `id` returned from the markdown format. Only fallback to CSS selectors if an ID is missing.
 5. Use `browser_screenshot` if you need visual confirmation of the page state.
 6. If you need advanced vulnerability testing, use `browser_inject_payload` to run raw JS, or `browser_execute_cdp` to interface directly with Chrome DevTools Protocol.
 

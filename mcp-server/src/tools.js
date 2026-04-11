@@ -160,25 +160,26 @@ export const MCP_TOOLS = [
         },
         {
           name: "browser_click",
-          description: "Click an element on the page using a CSS selector.",
+          description: "Click an element on the page. You can use EITHER the numeric 'id' returned from browser_extract_dom (markdown format), OR a standard CSS 'selector'. Prefer the numeric ID.",
           inputSchema: {
             type: "object",
             properties: {
-              selector: { type: "string", description: "CSS selector of the element to click" }
-            },
-            required: ["selector"]
+              id: { type: "number", description: "Numeric ID from browser_extract_dom markdown (e.g. 5)" },
+              selector: { type: "string", description: "CSS selector fallback" }
+            }
           }
         },
         {
           name: "browser_type",
-          description: "Type text into an input field on the page using a CSS selector.",
+          description: "Type text into an input field. You can use EITHER the numeric 'id' returned from browser_extract_dom (markdown format), OR a standard CSS 'selector'. Prefer the numeric ID.",
           inputSchema: {
             type: "object",
             properties: {
-              selector: { type: "string", description: "CSS selector of the input element" },
+              id: { type: "number", description: "Numeric ID from browser_extract_dom markdown (e.g. 12)" },
+              selector: { type: "string", description: "CSS selector fallback" },
               text: { type: "string", description: "Text to type" }
             },
-            required: ["selector", "text"]
+            required: ["text"]
           }
         },
 
