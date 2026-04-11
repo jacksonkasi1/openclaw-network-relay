@@ -5,7 +5,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { createPendingIntercept, dropPendingIntercept, markTimedOut } from './state.js';
 import { getActiveRules, getAllRules, addTrafficLog, getTrafficLogs, updateRuleState, updateRule, removeRule, clearAllTrafficLogs, clearAllRules } from './db.js';
-import { handleCdpResult, addExtensionStream } from './cdp.js';
+import { handleCdpResult, addExtensionStream, clearExtensionStream } from './cdp.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicPath = path.resolve(__dirname, '../public');
@@ -141,7 +141,7 @@ export function createHttpApp() {
 
     req.on('close', () => {
       clearInterval(pingInterval);
-      addExtensionStream(null);
+      clearExtensionStream(res);
     });
   });
 
