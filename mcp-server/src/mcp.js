@@ -199,7 +199,8 @@ function createMcpServerInstance() {
         if (res.exceptionDetails) {
            return { isError: true, content: [{ type: "text", text: "Exception: " + res.exceptionDetails.exception.description }] };
         }
-        return { content: [{ type: "text", text: JSON.stringify(res.result.value, null, 2) }] };
+        const val = JSON.stringify(res.result.value, null, 2);
+        return { content: [{ type: "text", text: val !== undefined ? val : "Execution successful (returned undefined)" }] };
       } catch (e) {
         return { isError: true, content: [{ type: "text", text: e.message }] };
       }
@@ -515,11 +516,42 @@ function createMcpServerInstance() {
           history = history.filter(h => h.method && h.method.toUpperCase() === args.method_filter.toUpperCase());
         }
         if (args.light_mode) {
-          history = history.map(h => ({
-            ...h,
-            requestBody: h.requestBody ? `[Omitted in light_mode - Size: ${h.requestBody.length} chars]` : null,
-            responseBody: h.responseBody ? `[Omitted in light_mode - Size: ${h.responseBody.length} chars]` : null
-          }));
+          history = history.map(h => {
+            // Strip out huge headers and bodies entirely for the high-level overview
+            const cleanedHeaders = {};
+            if (h.requestHeaders) {
+               Object.keys(h.requestHeaders).forEach(k => {
+                 if (['host', 'content-type', 'authorization'].includes(k.toLowerCase())) {
+                   cleanedHeaders[k] = h.requestHeaders[k];
+                 }
+               });
+            }
+            return {
+              id: h.id,
+              method: h.method,
+              url: h.url,
+              phase: h.phase,
+              statusCode: h.responseStatusCode,
+              importantHeaders: Object.keys(cleanedHeaders).length ? cleanedHeaders : undefined,
+              requestSize: h.requestBody ? h.requestBody.length : 0,
+              responseSize: h.responseBody ? h.responseBody.length : 0,
+              timestamp: h.createdAt
+            };
+          });
+        } else {
+          // Even in full mode, truncate massive strings unless specifically requested by log_id
+          const MAX_BODY_LEN = args.log_id ? 500000 : 2000;
+          history = history.map(h => {
+             const safeReq = h.requestBody && h.requestBody.length > MAX_BODY_LEN 
+               ? h.requestBody.substring(0, MAX_BODY_LEN) + `\n\n...[TRUNCATED ${h.requestBody.length - MAX_BODY_LEN} characters. Pass exact log_id to view more]`
+               : h.requestBody;
+               
+             const safeRes = h.responseBody && h.responseBody.length > MAX_BODY_LEN 
+               ? h.responseBody.substring(0, MAX_BODY_LEN) + `\n\n...[TRUNCATED ${h.responseBody.length - MAX_BODY_LEN} characters. Pass exact log_id to view more]`
+               : h.responseBody;
+               
+             return { ...h, requestBody: safeReq, responseBody: safeRes };
+          });
         }
       }
       

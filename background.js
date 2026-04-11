@@ -1,4 +1,4 @@
-const DEFAULT_ENDPOINT = "";
+const DEFAULT_ENDPOINT = "http://127.0.0.1:31337/log";
 const DEBUGGER_VERSION = "1.3";
 const DECISION_TIMEOUT_MS = 20000;
 
@@ -99,10 +99,15 @@ async function syncRules() {
 // --- CDP Command Stream ---
 function startCommandStream() {
   stopCommandStream();
-  if (!isSecureEndpoint(state.endpoint) || !state.attachedTabId || !state.enabled) return;
+  // We MUST wait for settings to load properly, and we MUST connect.
+  if (!state.enabled || !state.attachedTabId) return;
+  // If endpoint is empty, wait for loadSettings to fix it.
+  if (!state.endpoint) return;
 
   try {
-    const url = new URL(state.endpoint);
+    let baseUrlStr = state.endpoint;
+    if (baseUrlStr.endsWith('/log')) baseUrlStr = baseUrlStr.replace('/log', '');
+    const url = new URL(baseUrlStr);
     url.pathname = '/api/extension/commands';
     
     const controller = new AbortController();
@@ -226,7 +231,9 @@ function stopCommandStream() {
 async function sendCdpResult(id, result, error) {
   if (!isSecureEndpoint(state.endpoint)) return;
   try {
-    const url = new URL(state.endpoint);
+    let baseUrlStr = state.endpoint;
+    if (baseUrlStr.endsWith('/log')) baseUrlStr = baseUrlStr.replace('/log', '');
+    const url = new URL(baseUrlStr);
     url.pathname = '/api/extension/cdp-result';
     await fetch(url.href, {
       method: 'POST',
