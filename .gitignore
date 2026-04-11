@@ -2,3 +2,6 @@ browser-relay-ext.zip
 mcp-server/node_modules/
 mcp-server/openclaw.sqlite*
 plan/
+
+# Bug Bounty Reports
+reports/
