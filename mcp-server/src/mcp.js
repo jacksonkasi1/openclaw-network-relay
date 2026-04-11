@@ -264,7 +264,8 @@ function createMcpServerInstance() {
         if (res.exceptionDetails) {
            return { isError: true, content: [{ type: "text", text: "Exception: " + res.exceptionDetails.exception.description }] };
         }
-        return { content: [{ type: "text", text: JSON.stringify(res.result.value, null, 2) }] };
+        const val = normalizeCDPResult(res.result);
+        return { content: [{ type: "text", text: val }] };
       } catch (e) {
         return { isError: true, content: [{ type: "text", text: e.message }] };
       }
@@ -498,64 +499,53 @@ function createMcpServerInstance() {
 
     if (request.params.name === "get_traffic_history") {
       const args = request.params.arguments || {};
-      const limit = args.limit ? Math.max(1, Math.min(args.limit, 100)) : 50;
       
-      // Fetch more initially so we can filter properly before limiting
-      let history = getTrafficLogs(1000).map(serializeIntercept);
-      
-      if (args.log_id) {
-        history = history.filter(h => h.id === args.log_id);
-      } else {
-        if (args.folder) {
-          history = history.filter(h => h.folder === args.folder);
-        }
-        if (args.url_filter) {
-          history = history.filter(h => h.url && h.url.includes(args.url_filter));
-        }
-        if (args.method_filter) {
-          history = history.filter(h => h.method && h.method.toUpperCase() === args.method_filter.toUpperCase());
-        }
-        if (args.light_mode) {
-          history = history.map(h => {
-            // Strip out huge headers and bodies entirely for the high-level overview
-            const cleanedHeaders = {};
-            if (h.requestHeaders) {
-               Object.keys(h.requestHeaders).forEach(k => {
-                 if (['host', 'content-type', 'authorization'].includes(k.toLowerCase())) {
-                   cleanedHeaders[k] = h.requestHeaders[k];
-                 }
-               });
-            }
-            return {
-              id: h.id,
-              method: h.method,
-              url: h.url,
-              phase: h.phase,
-              statusCode: h.responseStatusCode,
-              importantHeaders: Object.keys(cleanedHeaders).length ? cleanedHeaders : undefined,
-              requestSize: h.requestBody ? h.requestBody.length : 0,
-              responseSize: h.responseBody ? h.responseBody.length : 0,
-              timestamp: h.createdAt
-            };
-          });
-        } else {
-          // Even in full mode, truncate massive strings unless specifically requested by log_id
-          const MAX_BODY_LEN = args.log_id ? 500000 : 2000;
-          history = history.map(h => {
-             const safeReq = h.requestBody && h.requestBody.length > MAX_BODY_LEN 
-               ? h.requestBody.substring(0, MAX_BODY_LEN) + `\n\n...[TRUNCATED ${h.requestBody.length - MAX_BODY_LEN} characters. Pass exact log_id to view more]`
-               : h.requestBody;
-               
-             const safeRes = h.responseBody && h.responseBody.length > MAX_BODY_LEN 
-               ? h.responseBody.substring(0, MAX_BODY_LEN) + `\n\n...[TRUNCATED ${h.responseBody.length - MAX_BODY_LEN} characters. Pass exact log_id to view more]`
-               : h.responseBody;
-               
-             return { ...h, requestBody: safeReq, responseBody: safeRes };
-          });
-        }
+      if (args.includeBodies || args.log_id) {
+        return { isError: true, content: [{ type: "text", text: "Bodies and full details require log_id via the get_traffic_detail tool. get_traffic_history is strictly for lightweight listing." }] };
       }
-      
-      // Slice after filtering
+
+      const limit = args.limit ? Math.max(1, Math.min(args.limit, 100)) : 50;
+
+      let history = getTrafficLogs(1000).map(serializeIntercept);
+
+      if (args.folder) {
+        history = history.filter(h => h.folder === args.folder);
+      }
+      if (args.url_filter) {
+        history = history.filter(h => h.url && h.url.includes(args.url_filter));
+      }
+      if (args.method_filter) {
+        history = history.filter(h => h.method && h.method.toUpperCase() === args.method_filter.toUpperCase());
+      }
+
+      // STRICT SAFE LIST MODE (No bodies, no raw headers)
+      history = history.map(h => {
+        let contentType = undefined;
+        let host = undefined;
+        let hasAuth = false;
+        
+        if (h.requestHeaders) {
+           Object.keys(h.requestHeaders).forEach(k => {
+             const lowerK = k.toLowerCase();
+             if (lowerK === 'content-type') contentType = h.requestHeaders[k];
+             if (lowerK === 'host') host = h.requestHeaders[k];
+             if (lowerK === 'authorization') hasAuth = true;
+           });
+        }
+        return {
+          id: h.id,
+          ts: h.createdAt,
+          method: h.method,
+          url: h.url,
+          status: h.responseStatusCode,
+          reqBytes: h.requestBody ? h.requestBody.length : 0,
+          resBytes: h.responseBody ? h.responseBody.length : 0,
+          contentType,
+          host,
+          hasAuth
+        };
+      });
+
       history = history.slice(0, limit);
 
       if (history.length === 0) {
@@ -563,6 +553,58 @@ function createMcpServerInstance() {
       }
       return { content: [{ type: "text", text: JSON.stringify(history, null, 2) }] };
     }
+
+    if (request.params.name === "get_traffic_detail") {
+      const args = request.params.arguments || {};
+      const { log_id } = args;
+      if (!log_id) {
+         return { isError: true, content: [{ type: "text", text: "log_id is required" }] };
+      }
+
+      const logEntry = getTrafficLogs(1000).map(serializeIntercept).find(h => h.id === log_id);
+      
+      if (!logEntry) {
+        return { content: [{ type: "text", text: "Log not found" }] };
+      }
+
+      function sanitizeHeaders(headers) {
+        if (!headers) return {};
+        const safe = {};
+        Object.keys(headers).forEach(k => {
+          const lowerK = k.toLowerCase();
+          if (lowerK === 'host') safe.host = headers[k];
+          if (lowerK === 'content-type') safe.contentType = headers[k];
+          if (lowerK === 'authorization') {
+             safe.authorization = headers[k].split(' ')[0] + " ***[redacted]***";
+          }
+        });
+        return safe;
+      }
+
+      function truncateBody(body, max = 2000) {
+        if (!body) return { preview: "", truncated: false, originalLength: 0 };
+        if (body.length <= max) {
+          return { preview: body, truncated: false, originalLength: body.length };
+        }
+        return { preview: body.slice(0, max), truncated: true, originalLength: body.length };
+      }
+
+      const detail = {
+        id: logEntry.id,
+        request: {
+          headers: sanitizeHeaders(logEntry.requestHeaders),
+          body: truncateBody(logEntry.requestBody, 2000)
+        },
+        response: {
+          status: logEntry.responseStatusCode,
+          headers: sanitizeHeaders(logEntry.responseHeaders),
+          body: truncateBody(logEntry.responseBody, 2000)
+        }
+      };
+
+      return { content: [{ type: "text", text: JSON.stringify(detail, null, 2) }] };
+    }
+
 
     if (request.params.name === "organize_traffic_log") {
       const { log_id, folder } = request.params.arguments || {};
