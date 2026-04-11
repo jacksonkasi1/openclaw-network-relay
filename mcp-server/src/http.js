@@ -138,9 +138,11 @@ export function createHttpApp() {
       res.flushHeaders();
     }
 
-    if (req.socket?.setKeepAlive) req.socket.setKeepAlive(true, 15000);
-    if (req.socket?.setNoDelay) req.socket.setNoDelay(true);
+    if (req.socket && req.socket.setKeepAlive) req.socket.setKeepAlive(true, 15000);
+    if (req.socket && req.socket.setNoDelay) req.socket.setNoDelay(true);
 
+    // Some environments need an explicit empty write to clear the headers fully
+    res.write(':\n\n');
     res.write('retry: 1000\n');
     res.write('event: ready\ndata: {"ok":true}\n\n');
     if (typeof res.flush === 'function') res.flush();

@@ -200,6 +200,10 @@ function startCommandStream() {
     es.addEventListener('ready', () => {
       console.error('Command stream ready.');
     });
+    
+    es.onopen = () => {
+      console.error('Command stream officially OPEN');
+    };
 
     es.addEventListener('ping', () => {
       // no-op, just keeps the stream active
