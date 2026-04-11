@@ -3,7 +3,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { getPendingIntercept, listPendingIntercepts, resolvePendingIntercept } from './state.js';
-import { getTrafficLogs, getAllRules, addRule, removeRule, organizeLogIntoFolder, clearAllTrafficLogs, clearAllRules } from './db.js';
+import { getTrafficLogs, getAllRules, addRule, removeRule, organizeLogIntoFolder, clearAllTrafficLogs, clearAllRules, executeRawQuery } from './db.js';
 import { sendCdpCommand } from './cdp.js';
 import { MCP_TOOLS } from './tools.js';
 
@@ -54,6 +54,27 @@ function createMcpServerInstance() {
 
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
+
+    if (request.params.name === "db_sql_query") {
+      const args = request.params.arguments || {};
+      try {
+        const rows = executeRawQuery(args.query);
+        if (rows.length === 0) {
+          return { content: [{ type: "text", text: "No rows matched your query." }] };
+        }
+        
+        // Let's cap the stringified output size just to be safe so we don't blow up the LLM
+        let stringified = JSON.stringify(rows, null, 2);
+        if (stringified.length > 200000) {
+          return { content: [{ type: "text", text: stringified.substring(0, 200000) + "\n\n[...RESULTS TRUNCATED TO SAVE CONTEXT WINDOW. ADD 'LIMIT' OR FILTER TO YOUR SQL QUERY...]\n" }] };
+        }
+        
+        return { content: [{ type: "text", text: stringified }] };
+      } catch (e) {
+        return { isError: true, content: [{ type: "text", text: "SQL Error: " + e.message }] };
+      }
+    }
+  
     if (request.params.name === "add_rule") {
       const args = request.params.arguments || {};
       const rule = addRule(args);

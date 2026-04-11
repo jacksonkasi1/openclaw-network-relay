@@ -1,4 +1,16 @@
 export const MCP_TOOLS = [
+        {
+          name: "db_sql_query",
+          description: "Execute a raw, read-only SQL SELECT query against the high-performance local SQLite database. Gives you MAXIMUM control to filter or analyze network traffic! Tables available:\n1. 'rules' (id, name, folder, urlPattern, method, phase, action, modifiedBody, isActive, createdAt)\n2. 'traffic_logs' (id, folder, phase, mode, url, method, requestHeaders, requestBody, responseStatusCode, responseHeaders, responseBody, timestamp)",
+          inputSchema: {
+            type: "object",
+            properties: {
+              query: { type: "string", description: "The raw SQL SELECT statement to execute (e.g. 'SELECT id, url, method FROM traffic_logs WHERE responseStatusCode >= 400 ORDER BY timestamp DESC')" }
+            },
+            required: ["query"]
+          }
+        },
+
 
         {
           name: "add_rule",

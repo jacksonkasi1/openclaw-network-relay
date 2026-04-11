@@ -5,6 +5,11 @@ import { join } from "path";
 const dbPath = join(import.meta.dir, "..", "openclaw.sqlite");
 const db = new Database(dbPath, { create: true });
 db.exec("PRAGMA journal_mode = WAL;");
+// Maximum Bun SQLite Optimizations
+db.exec("PRAGMA synchronous = NORMAL;"); // Safe with WAL, much faster than FULL
+db.exec("PRAGMA temp_store = MEMORY;"); // Store temp indices/tables in RAM
+db.exec("PRAGMA mmap_size = 268435456;"); // 256MB memory-mapped I/O for lightning fast reads
+db.exec("PRAGMA cache_size = -64000;"); // 64MB page cache
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS rules (
@@ -179,4 +184,15 @@ export function clearAllTrafficLogs() {
 
 export function clearAllRules() {
   db.query("DELETE FROM rules").run();
+}
+
+
+export function executeRawQuery(sql) {
+  // We restrict to SELECT for safety, to prevent AI from accidentally dropping tables
+  if (!sql.trim().toUpperCase().startsWith('SELECT')) {
+    throw new Error("Only SELECT queries are permitted via the raw query tool.");
+  }
+  // Limit to prevent massive payload crashing the LLM context
+  const safeSql = sql.includes('LIMIT') ? sql : sql + ' LIMIT 100';
+  return db.query(safeSql).all();
 }
