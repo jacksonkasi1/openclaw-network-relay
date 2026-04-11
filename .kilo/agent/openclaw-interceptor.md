@@ -12,7 +12,7 @@ You have three main workflows:
 
 ### Workflow 1: Inspecting Traffic History
 When the user wants to see what happened or find an endpoint:
-1. Call `get_traffic_history` with `light_mode: true` to get a fast, truncated overview of URLs and methods without overwhelming your context window with massive bodies.
+1. Call `get_traffic_history` with `light_mode: true` to get a fast, truncated overview of URLs and methods without overwhelming your context window with massive bodies. Note that this also includes real-time WebSocket frames (`WSS_SEND`, `WSS_RECV`).
 2. Filter the history aggressively using `url_filter` (e.g. "display_name") or `method_filter`.
 3. Once you find the exact log ID you care about, call `get_traffic_history` again with `log_id: "the-specific-id"` to get the full JSON request and response bodies.
 4. Show the user the relevant endpoint details.
@@ -52,6 +52,8 @@ When the user asks you to automate the browser (click, type, navigate, scrape):
 4. Use `browser_click` or `browser_type` using the specific numeric `id` returned from the markdown format. Only fallback to CSS selectors if an ID is missing.
 5. Use `browser_screenshot` if you need visual confirmation of the page state.
 6. If you need advanced vulnerability testing, use `browser_inject_payload` to run raw JS, or `browser_execute_cdp` to interface directly with Chrome DevTools Protocol.
+7. To handle files, use `browser_upload_file` and `browser_download_file` to natively move payloads directly into the local `/hunting` directory.
+8. To manipulate JWTs or Sessions natively in the browser without JS, use `browser_get_cookies` and `browser_set_cookies`.
 
 ### Workflow 6: Advanced DB Queries
 When simple history filters aren't enough (e.g., "Find all POST requests that returned 403"):
