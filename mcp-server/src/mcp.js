@@ -121,6 +121,9 @@ function createMcpServerInstance() {
         } else if (args.format === 'markdown') {
           expression = `
             (() => {
+              let interactiveId = 1;
+              window.__openclawInteractables = new Map();
+              
               function walk(node) {
                 if (node.nodeType === Node.TEXT_NODE) {
                   return node.textContent.trim() ? node.textContent.trim() + ' ' : '';
@@ -135,29 +138,40 @@ function createMcpServerInstance() {
 
                 let out = '';
                 
-                if (tag === 'a' && node.href) out += '[';
-                if (tag === 'button') out += '[BUTTON: ';
+                const isInteractive = tag === 'a' || tag === 'button' || tag === 'input' || tag === 'textarea' || node.onclick != null || node.getAttribute('role') === 'button';
+                let currentId = null;
+                
+                if (isInteractive) {
+                  currentId = interactiveId++;
+                  window.__openclawInteractables.set(currentId, node);
+                  out += \`[ID:\${currentId} \${tag.toUpperCase()} \`;
+                }
+
                 if (tag === 'input' || tag === 'textarea') {
                    const type = node.type || 'text';
                    const placeholder = node.placeholder || '';
                    const val = node.value || '';
-                   return \`[INPUT \${type} \${node.id ? '#'+node.id : ''} \${placeholder ? 'placeholder="'+placeholder+'"' : ''} value="\${val}"] \`;
+                   out += \`type="\${type}" \${placeholder ? 'placeholder="'+placeholder+'" ' : ''}value="\${val}"] \`;
+                   return out; // Inputs rarely have text children we care about
                 }
 
                 for (const child of node.childNodes) {
                   out += walk(child);
                 }
 
-                if (tag === 'a' && node.href) out += \`](href: \${node.href}) \`;
-                if (tag === 'button') out += '] ';
+                if (isInteractive) {
+                  if (tag === 'a' && node.href) out += \` (href: \${node.href})\`;
+                  out += '] ';
+                }
                 
-                if (['div', 'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'section', 'article', 'li', 'ul', 'ol', 'form'].includes(tag)) {
+                if (['div', 'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'section', 'article', 'li', 'ul', 'ol', 'form', 'tr'].includes(tag)) {
                   out = '\\n' + out.trim() + '\\n';
                 }
                 
                 return out;
               }
-              return walk(document.body).replace(/\\n\\s*\\n/g, '\\n').trim();
+              const result = walk(document.body).replace(/\\n\\s*\\n/g, '\\n').trim();
+              return result;
             })();
           `;
         }
@@ -274,8 +288,13 @@ function createMcpServerInstance() {
       try {
         const expression = `
           (() => {
-            const el = document.querySelector(${JSON.stringify(args.selector)});
-            if (!el) return { error: 'Element not found' };
+            let el;
+            if (${JSON.stringify(args.id)} != null && window.__openclawInteractables) {
+               el = window.__openclawInteractables.get(Number(${JSON.stringify(args.id)}));
+            } else if (${JSON.stringify(args.selector)}) {
+               el = document.querySelector(${JSON.stringify(args.selector)});
+            }
+            if (!el) return { error: 'Element not found! Did you run browser_extract_dom first?' };
             el.scrollIntoView({block: "center", inline: "center"});
             el.click();
             return { ok: true };
@@ -283,7 +302,7 @@ function createMcpServerInstance() {
         `;
         const res = await sendCdpCommand(null, "Runtime.evaluate", { expression, returnByValue: true });
         if (res.result?.value?.error) return { isError: true, content: [{ type: "text", text: res.result.value.error }] };
-        return { content: [{ type: "text", text: `Clicked ${args.selector}` }] };
+        return { content: [{ type: "text", text: `Clicked element successfully.` }] };
       } catch (e) {
         return { isError: true, content: [{ type: "text", text: e.message }] };
       }
