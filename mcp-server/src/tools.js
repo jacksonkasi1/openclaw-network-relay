@@ -152,10 +152,12 @@ export const MCP_TOOLS = [
         },
         {
           name: "browser_screenshot",
-          description: "Take a full page screenshot of the attached browser tab.",
+          description: "Take a screenshot of the attached browser tab. Can optionally draw Set-of-Mark (SoM) bounding boxes over interactive elements if you need visual help finding buttons.",
           inputSchema: {
             type: "object",
-            properties: {}
+            properties: {
+              annotate: { type: "boolean", description: "Draw numbered red bounding boxes over every interactive element on the screen. (You MUST run browser_extract_dom first to generate the IDs!)" }
+            }
           }
         },
         {

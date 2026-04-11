@@ -270,11 +270,69 @@ function createMcpServerInstance() {
     }
 
     if (request.params.name === "browser_screenshot") {
+      const args = request.params.arguments || {};
       try {
+        if (args.annotate) {
+          const drawExpression = `
+            (() => {
+              if (!window.__openclawInteractables) return { error: "No elements mapped! You must run browser_extract_dom (format: markdown) first before requesting an annotated screenshot." };
+              
+              // Remove any existing overlays just in case
+              document.querySelectorAll('.openclaw-som-overlay').forEach(e => e.remove());
+              
+              for (const [id, node] of window.__openclawInteractables.entries()) {
+                const rect = node.getBoundingClientRect();
+                if (rect.width === 0 || rect.height === 0) continue;
+                
+                const overlay = document.createElement('div');
+                overlay.className = 'openclaw-som-overlay';
+                overlay.style.position = 'absolute';
+                overlay.style.top = (window.scrollY + rect.top) + 'px';
+                overlay.style.left = (window.scrollX + rect.left) + 'px';
+                overlay.style.width = rect.width + 'px';
+                overlay.style.height = rect.height + 'px';
+                overlay.style.border = '2px solid red';
+                overlay.style.zIndex = '2147483647';
+                overlay.style.pointerEvents = 'none';
+                
+                const label = document.createElement('div');
+                label.textContent = id;
+                label.style.position = 'absolute';
+                label.style.top = '-16px';
+                label.style.left = '-2px';
+                label.style.backgroundColor = 'red';
+                label.style.color = 'white';
+                label.style.fontSize = '12px';
+                label.style.fontWeight = 'bold';
+                label.style.padding = '1px 4px';
+                label.style.borderRadius = '2px';
+                
+                overlay.appendChild(label);
+                document.body.appendChild(overlay);
+              }
+              return { ok: true };
+            })();
+          `;
+          
+          const drawRes = await sendCdpCommand(null, "Runtime.evaluate", { expression: drawExpression, returnByValue: true });
+          if (drawRes.result?.value?.error) {
+            return { isError: true, content: [{ type: "text", text: drawRes.result.value.error }] };
+          }
+        }
+        
+        // Wait a tiny bit for rendering
+        await new Promise(r => setTimeout(r, 100));
+
         const res = await sendCdpCommand(null, "Page.captureScreenshot", { format: "png" });
+        
+        if (args.annotate) {
+          const eraseExpression = `document.querySelectorAll('.openclaw-som-overlay').forEach(e => e.remove());`;
+          await sendCdpCommand(null, "Runtime.evaluate", { expression: eraseExpression });
+        }
+
         return { 
           content: [
-            { type: "text", text: "Screenshot captured:" },
+            { type: "text", text: "Screenshot captured" + (args.annotate ? " with Set-of-Mark annotations" : "") + ":" },
             { type: "image", data: res.data, mimeType: "image/png" }
           ] 
         };
