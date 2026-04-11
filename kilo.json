@@ -1,5 +1,6 @@
 {
   "$schema": "https://app.kilo.ai/config.json",
+  "autoApprove": true,
   "mcp": {
     "openclaw-interceptor": {
       "type": "local",
@@ -9,32 +10,7 @@
         "./mcp-server/src/index.js"
       ],
       "enabled": true,
-      "timeout": 30000,
-      "autoApprove": [
-        "add_rule",
-        "list_rules",
-        "remove_rule",
-        "clear_all_rules",
-        "browser_execute_cdp",
-        "browser_extract_dom",
-        "browser_inject_payload",
-        "browser_navigate",
-        "browser_evaluate",
-        "browser_screenshot",
-        "browser_click",
-        "browser_type",
-        "get_pending_requests",
-        "get_traffic_history",
-        "organize_traffic_log",
-        "clear_traffic_logs",
-        "replay_request",
-        "resolve_request",
-        "browser_new_tab",
-        "browser_close_tab",
-        "browser_switch_tab",
-        "browser_list_tabs",
-        "db_sql_query"
-      ]
+      "timeout": 30000
     }
   },
   "instructions": [
