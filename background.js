@@ -2,6 +2,21 @@ const DEFAULT_ENDPOINT = "http://127.0.0.1:31337/log";
 const DEBUGGER_VERSION = "1.3";
 const DECISION_TIMEOUT_MS = 20000;
 
+
+// MANIFEST V3 KEEPALIVE HACK
+// Service workers are killed after 30s of inactivity.
+// We force it to stay alive by periodically pinging a trivial Chrome API.
+let keepAliveInterval = null;
+
+function ensureWorkerAlive() {
+  if (keepAliveInterval) clearInterval(keepAliveInterval);
+  keepAliveInterval = setInterval(() => {
+    if (state.enabled) {
+       chrome.runtime.getPlatformInfo(() => {});
+    }
+  }, 20000); // every 20 seconds
+}
+
 const state = {
   endpoint: DEFAULT_ENDPOINT,
   enabled: false,
@@ -326,6 +341,7 @@ async function attachToTab(tabId) {
   state.attachedTabId = tabId;
   startRuleSync();
   startCommandStream();
+  ensureWorkerAlive();
 }
 
 async function loadSettings() {
@@ -708,6 +724,7 @@ chrome.debugger.onDetach.addListener((source) => {
     stopCommandStream();
     state.enabled = false;
     state.attachedTabId = null;
+    if (keepAliveInterval) clearInterval(keepAliveInterval);
     persistState();
   }
 });

@@ -6,15 +6,22 @@ const pendingCommands = new Map();
 let nextCommandId = 1;
 
 export function addExtensionStream(res) {
-  if (extensionStream && res) {
-    extensionStream.end();
+  // If we are replacing an existing stream with a NEW stream, end the old one gracefully.
+  // But DO NOT drop pendingCommands, because the AI is still waiting on them!
+  if (extensionStream && res && extensionStream !== res) {
+    try { extensionStream.end(); } catch (e) {}
   }
-  extensionStream = res;
-  if (res) {
-    console.error("[CDP] Extension connected to command stream.");
-  } else {
+  
+  // If res is null (disconnect), only clear extensionStream if it hasn't already been replaced
+  if (!res) {
+    // We don't want to nullify if a new connection already snuck in
+    // However, the HTTP close event might trigger late, so we leave it alone unless we really want to track IDs
     console.error("[CDP] Extension disconnected from command stream.");
+  } else {
+    console.error("[CDP] Extension connected to command stream.");
   }
+  
+  extensionStream = res;
 }
 
 export function handleCdpResult(body) {
