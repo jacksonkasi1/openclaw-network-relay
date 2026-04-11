@@ -108,11 +108,11 @@ export const MCP_TOOLS = [
 
         {
           name: "browser_extract_dom",
-          description: "Extract the full HTML DOM or innerText of the current page for vulnerability scanning.",
+          description: "Extract the page content. 'markdown' provides a highly compressed, token-efficient view of buttons/inputs/text for the LLM. 'html' gives raw DOM for vulnerability scanning. 'text' gives raw innerText.",
           inputSchema: {
             type: "object",
             properties: {
-              format: { type: "string", enum: ["html", "text"], description: "Whether to return full HTML or just text content" }
+              format: { type: "string", enum: ["markdown", "html", "text"], description: "Whether to return full HTML or just text content" }
             },
             required: ["format"]
           }

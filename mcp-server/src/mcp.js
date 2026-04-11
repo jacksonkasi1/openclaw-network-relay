@@ -113,12 +113,66 @@ function createMcpServerInstance() {
     if (request.params.name === "browser_extract_dom") {
       const args = request.params.arguments || {};
       try {
-        const expression = args.format === 'html' ? 'document.documentElement.outerHTML' : 'document.body.innerText';
+        let expression = '';
+        if (args.format === 'html') {
+          expression = 'document.documentElement.outerHTML';
+        } else if (args.format === 'text') {
+          expression = 'document.body.innerText';
+        } else if (args.format === 'markdown') {
+          expression = `
+            (() => {
+              function walk(node) {
+                if (node.nodeType === Node.TEXT_NODE) {
+                  return node.textContent.trim() ? node.textContent.trim() + ' ' : '';
+                }
+                if (node.nodeType !== Node.ELEMENT_NODE) return '';
+                
+                const style = window.getComputedStyle(node);
+                if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return '';
+                
+                const tag = node.tagName.toLowerCase();
+                if (['script', 'style', 'noscript', 'svg', 'canvas', 'img', 'video', 'audio'].includes(tag)) return '';
+
+                let out = '';
+                
+                if (tag === 'a' && node.href) out += '[';
+                if (tag === 'button') out += '[BUTTON: ';
+                if (tag === 'input' || tag === 'textarea') {
+                   const type = node.type || 'text';
+                   const placeholder = node.placeholder || '';
+                   const val = node.value || '';
+                   return \`[INPUT \${type} \${node.id ? '#'+node.id : ''} \${placeholder ? 'placeholder="'+placeholder+'"' : ''} value="\${val}"] \`;
+                }
+
+                for (const child of node.childNodes) {
+                  out += walk(child);
+                }
+
+                if (tag === 'a' && node.href) out += \`](href: \${node.href}) \`;
+                if (tag === 'button') out += '] ';
+                
+                if (['div', 'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'section', 'article', 'li', 'ul', 'ol', 'form'].includes(tag)) {
+                  out = '\\n' + out.trim() + '\\n';
+                }
+                
+                return out;
+              }
+              return walk(document.body).replace(/\\n\\s*\\n/g, '\\n').trim();
+            })();
+          `;
+        }
+
         const res = await sendCdpCommand(null, "Runtime.evaluate", { expression, returnByValue: true });
         if (res.exceptionDetails) {
            return { isError: true, content: [{ type: "text", text: "Exception: " + res.exceptionDetails.exception.description }] };
         }
-        return { content: [{ type: "text", text: res.result.value }] };
+        
+        let output = res.result.value || "";
+        if (typeof output === 'string' && output.length > 100000) {
+           output = output.substring(0, 100000) + "\n\n[...TRUNCATED AT 100KB TO SAVE LLM CONTEXT WINDOW...]";
+        }
+
+        return { content: [{ type: "text", text: output }] };
       } catch (e) {
         return { isError: true, content: [{ type: "text", text: e.message }] };
       }
