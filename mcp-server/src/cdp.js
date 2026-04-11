@@ -39,7 +39,7 @@ export function handleCdpResult(body) {
 export function sendCdpCommand(tabId, method, params = {}) {
   return new Promise((resolve, reject) => {
     if (!extensionStream) {
-      return reject(new Error("Chrome Extension is not connected to the command stream. Is Intercept mode enabled and attached to a tab?"));
+      return reject(new Error("Chrome Extension is not connected to the command stream. Is the extension turned ON and attached to a tab?"));
     }
 
     const id = nextCommandId++;

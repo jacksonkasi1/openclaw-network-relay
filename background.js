@@ -99,7 +99,7 @@ async function syncRules() {
 // --- CDP Command Stream ---
 function startCommandStream() {
   stopCommandStream();
-  if (!isSecureEndpoint(state.endpoint) || !state.attachedTabId) return;
+  if (!isSecureEndpoint(state.endpoint) || !state.attachedTabId || !state.enabled) return;
 
   try {
     const url = new URL(state.endpoint);
@@ -111,8 +111,45 @@ function startCommandStream() {
       try {
         const msg = JSON.parse(event.data);
         if (msg.id && msg.method) {
-          const tabId = msg.tabId || state.attachedTabId;
           try {
+            const isTabCommand = msg.method === "Target.createTarget" || msg.method === "Target.closeTarget" || msg.method === "Target.activateTarget" || msg.method === "Target.getTabs";
+            
+            if (isTabCommand) {
+              if (msg.method === "Target.createTarget") {
+                const url = typeof msg.params?.url === 'string' ? msg.params.url : 'about:blank';
+                const tab = await chrome.tabs.create({ url, active: false });
+                if (!tab.id) throw new Error('Failed to create tab');
+                await new Promise(r => setTimeout(r, 200));
+                await chrome.debugger.attach({ tabId: tab.id }, DEBUGGER_VERSION).catch(()=>null);
+                const info = await chrome.debugger.sendCommand({ tabId: tab.id }, 'Target.getTargetInfo').catch(()=>null);
+                const targetId = String(info?.targetInfo?.targetId || '').trim();
+                await sendCdpResult(msg.id, { targetId, tabId: tab.id }, null);
+                return;
+              }
+              if (msg.method === "Target.closeTarget") {
+                const targetTabId = msg.params?.tabId || state.attachedTabId;
+                await chrome.tabs.remove(targetTabId).catch(()=>null);
+                await sendCdpResult(msg.id, { success: true }, null);
+                return;
+              }
+              if (msg.method === "Target.activateTarget") {
+                const targetTabId = msg.params?.tabId || state.attachedTabId;
+                const tab = await chrome.tabs.get(targetTabId).catch(() => null);
+                if (tab && tab.windowId) {
+                  await chrome.windows.update(tab.windowId, { focused: true }).catch(() => {});
+                }
+                await chrome.tabs.update(targetTabId, { active: true }).catch(() => {});
+                await sendCdpResult(msg.id, { success: true }, null);
+                return;
+              }
+              if (msg.method === "Target.getTabs") {
+                 const allTabs = await chrome.tabs.query({});
+                 await sendCdpResult(msg.id, { tabs: allTabs }, null);
+                 return;
+              }
+            }
+
+            const tabId = msg.params?.tabId || msg.tabId || state.attachedTabId;
             const result = await chrome.debugger.sendCommand({ tabId }, msg.method, msg.params);
             await sendCdpResult(msg.id, result, null);
           } catch (e) {
@@ -233,6 +270,7 @@ async function attachToTab(tabId) {
 
   state.attachedTabId = tabId;
   startRuleSync();
+  startCommandStream();
 }
 
 async function loadSettings() {
@@ -622,6 +660,7 @@ chrome.debugger.onDetach.addListener((source) => {
 chrome.tabs.onRemoved.addListener((tabId) => {
   if (tabId === state.attachedTabId) {
     stopRuleSync();
+    stopCommandStream();
     state.enabled = false;
     state.attachedTabId = null;
     persistState();
@@ -645,6 +684,11 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
   if (message?.type === "SET_MODE") {
     state.mode = message.mode === "intercept" ? "intercept" : "listen";
+    if (state.mode === "intercept" && state.attachedTabId) {
+      startCommandStream();
+    } else {
+      stopCommandStream();
+    }
     persistState().then(() => {
       sendResponse({ ok: true, mode: state.mode });
     });
@@ -684,8 +728,8 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           return;
         }
 
-        await attachToTab(tabId);
         state.enabled = true;
+        await attachToTab(tabId);
       } else {
         await detachFromTab(state.attachedTabId);
         state.enabled = false;
