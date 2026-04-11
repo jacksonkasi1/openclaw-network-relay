@@ -130,20 +130,34 @@ export function createHttpApp() {
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
-      'Connection': 'keep-alive'
+      'Connection': 'keep-alive',
+      'X-Accel-Buffering': 'no'
     });
-    res.write(':\n\n'); // send initial flush
+    if (typeof res.flushHeaders === 'function') {
+      res.flushHeaders();
+    }
+    if (req.socket && req.socket.setKeepAlive) req.socket.setKeepAlive(true, 15000);
+    if (req.socket && req.socket.setNoDelay) req.socket.setNoDelay(true);
+    res.write('event: ready\ndata: {"ok":true}\n\n');
     addExtensionStream(res);
-    
+
     const pingInterval = setInterval(() => {
-      res.write(':\n\n');
-    }, 10000);
+      try {
+        res.write(`event: ping\ndata: {"ts":${Date.now()}}\n\n`);
+      } catch (e) {}
+    }, 15000);
 
     req.on('close', () => {
       clearInterval(pingInterval);
       clearExtensionStream(res);
     });
+
+    res.on('error', () => {
+      clearInterval(pingInterval);
+      clearExtensionStream(res);
+    });
   });
+
 
   app.post('/api/extension/cdp-result', (req, res) => {
     handleCdpResult(req.body);
