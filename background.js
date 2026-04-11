@@ -222,7 +222,9 @@ function startCommandStream() {
 
     es.onerror = () => {
       if (state.enabled && state.commandStream === es) {
-        console.error('Command stream error; EventSource will retry automatically.');
+        console.error('Command stream error; Forcing complete teardown and explicit reconnect.');
+        stopCommandStream();
+        state.reconnectTimer = setTimeout(startCommandStream, 1500);
       }
     };
   } catch (e) {
