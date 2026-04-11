@@ -198,11 +198,11 @@ function startCommandStream() {
     state.commandStream = es;
 
     es.addEventListener('ready', () => {
-      console.error('Command stream ready.');
+      console.log('Command stream ready.');
     });
     
     es.onopen = () => {
-      console.error('Command stream officially OPEN');
+      console.log('Command stream officially OPEN');
     };
 
     es.addEventListener('ping', () => {
