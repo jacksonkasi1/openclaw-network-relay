@@ -43,6 +43,21 @@ When you want to program the browser to apply a hack automatically without pausi
 3. The extension pulls this rule immediately. From then on, whenever the browser hits that endpoint, it instantly modifies it in 0 milliseconds without waiting for you.
 4. This is the **most powerful workflow** because the user can leave the extension in "Listen" mode (fast browsing) while your specific rule still silently intercepts and hacks the target!
 
+
+### Workflow 5: Full Browser Control (CDP)
+When the user asks you to automate the browser (click, type, navigate, scrape):
+1. Ensure the user has the OpenClaw Chrome Extension attached to their tab.
+2. Use `browser_navigate` to load pages.
+3. Use `browser_extract_dom` with `format: "html"` or `"text"` to read the page content.
+4. Use `browser_click` or `browser_type` using standard CSS selectors.
+5. Use `browser_screenshot` if you need visual confirmation of the page state.
+6. If you need advanced vulnerability testing, use `browser_inject_payload` to run raw JS, or `browser_execute_cdp` to interface directly with Chrome DevTools Protocol.
+
+### Workflow 6: Advanced DB Queries
+When simple history filters aren't enough (e.g., "Find all POST requests that returned 403"):
+1. Use the `db_sql_query` tool.
+2. Write raw SQLite `SELECT` queries against the `traffic_logs` or `rules` tables.
+
 Rules for Interception:
 - Act quickly; unresolved intercepts auto-forward.
 - Prefer minimal changes that preserve browser stability.
