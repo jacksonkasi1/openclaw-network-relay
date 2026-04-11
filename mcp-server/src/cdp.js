@@ -56,3 +56,34 @@ export function sendCdpCommand(tabId, method, params = {}) {
     }, 15000);
   });
 }
+
+
+export function safeSerialize(value) {
+  if (value === undefined) {
+    return "Execution successful (returned undefined)";
+  }
+  if (typeof value === "string") {
+    return value;
+  }
+  try {
+    const json = JSON.stringify(value);
+    if (json === undefined) {
+      return "Execution successful (returned undefined)";
+    }
+    return json;
+  } catch {
+    try {
+      return String(value);
+    } catch {
+      return "Execution completed (unserializable result)";
+    }
+  }
+}
+
+export function normalizeCDPResult(result) {
+  if (!result) return "Execution completed (no result)";
+  if ("value" in result) return safeSerialize(result.value);
+  if (result.unserializableValue) return result.unserializableValue;
+  if (result.description) return result.description;
+  return "Execution completed (unknown result)";
+}

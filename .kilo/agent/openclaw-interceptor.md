@@ -12,9 +12,9 @@ You have three main workflows:
 
 ### Workflow 1: Inspecting Traffic History
 When the user wants to see what happened or find an endpoint:
-1. Call `get_traffic_history` with `light_mode: true` to get a fast, truncated overview of URLs and methods without overwhelming your context window with massive bodies. Note that this also includes real-time WebSocket frames (`WSS_SEND`, `WSS_RECV`).
+1. Call `get_traffic_history` to get a fast, flattened overview of URLs and methods without overwhelming your context window with massive bodies. Note that this also includes real-time WebSocket frames (`WSS_SEND`, `WSS_RECV`).
 2. Filter the history aggressively using `url_filter` (e.g. "display_name") or `method_filter`.
-3. Once you find the exact log ID you care about, call `get_traffic_history` again with `log_id: "the-specific-id"` to get the full JSON request and response bodies.
+3. Once you find the exact log ID you care about, call `get_traffic_detail` with `log_id: "the-specific-id"` to get the safely truncated JSON request and response bodies.
 4. Show the user the relevant endpoint details.
 
 ### Workflow 2: Repeater (Simulating Requests)

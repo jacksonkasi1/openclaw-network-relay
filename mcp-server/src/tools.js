@@ -247,17 +247,26 @@ export const MCP_TOOLS = [
         },
         {
           name: "get_traffic_history",
-          description: "List recently logged network requests/responses from SQLite DB. Use filters or light_mode to avoid overwhelming context with massive payloads.",
+          description: "SAFE LIST MODE: List recently logged network requests/responses from SQLite DB. Always lightweight (no bodies, sanitized headers) to prevent context bloat.",
           inputSchema: {
             type: "object",
             properties: {
               limit: { type: "number", description: "Number of recent items to return (default 50, max 100)" },
               folder: { type: "string", description: "Filter by a specific folder/collection name" },
               url_filter: { type: "string", description: "Only return requests where the URL contains this string" },
-              method_filter: { type: "string", description: "Only return requests with this HTTP method (e.g. 'POST')" },
-              light_mode: { type: "boolean", description: "If true, omits request and response bodies to save context space. Highly recommended for general exploration!" },
-              log_id: { type: "string", description: "Fetch the full details of one specific log by its ID." }
+              method_filter: { type: "string", description: "Only return requests with this HTTP method (e.g. 'POST')" }
             }
+          }
+        },
+        {
+          name: "get_traffic_detail",
+          description: "Fetch the full details of a specific traffic log by its ID. Used to view massive request/response payloads.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              log_id: { type: "string", description: "The ID of the traffic log to deeply inspect" }
+            },
+            required: ["log_id"]
           }
         },
         {

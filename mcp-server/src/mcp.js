@@ -4,7 +4,7 @@ import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { getPendingIntercept, listPendingIntercepts, resolvePendingIntercept } from './state.js';
 import { getTrafficLogs, getAllRules, addRule, removeRule, organizeLogIntoFolder, clearAllTrafficLogs, clearAllRules, executeRawQuery } from './db.js';
-import { sendCdpCommand } from './cdp.js';
+import { sendCdpCommand, normalizeCDPResult } from './cdp.js';
 import { MCP_TOOLS } from './tools.js';
 
 
@@ -199,8 +199,8 @@ function createMcpServerInstance() {
         if (res.exceptionDetails) {
            return { isError: true, content: [{ type: "text", text: "Exception: " + res.exceptionDetails.exception.description }] };
         }
-        const val = JSON.stringify(res.result.value, null, 2);
-        return { content: [{ type: "text", text: val !== undefined ? val : "Execution successful (returned undefined)" }] };
+        const val = normalizeCDPResult(res.result);
+        return { content: [{ type: "text", text: val }] };
       } catch (e) {
         return { isError: true, content: [{ type: "text", text: e.message }] };
       }
