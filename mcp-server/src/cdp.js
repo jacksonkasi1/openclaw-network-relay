@@ -1,4 +1,4 @@
-import { EventEmitter } from 'events';
+import { EventEmitter } from "events";
 
 export const cdpEvents = new EventEmitter();
 let extensionStream = null;
@@ -8,7 +8,9 @@ let nextCommandId = 1;
 export function addExtensionStream(res) {
   if (res) {
     if (extensionStream && extensionStream !== res) {
-      try { extensionStream.end(); } catch {}
+      try {
+        extensionStream.end();
+      } catch {}
     }
     extensionStream = res;
     console.error("[CDP] Extension connected to command stream.");
@@ -26,7 +28,7 @@ export function handleCdpResult(body) {
   const { id, result, error, event, params } = body;
 
   if (event) {
-    cdpEvents.emit('event', { event, params });
+    cdpEvents.emit("event", { event, params });
     return;
   }
 
@@ -44,12 +46,31 @@ export function handleCdpResult(body) {
 export function sendCdpCommand(tabId, method, params = {}) {
   return new Promise((resolve, reject) => {
     const trySend = (attempts = 0) => {
-      if (!extensionStream) {
+      // Also treat a writableEnded / destroyed stream as "not connected" so we
+      // don't silently swallow writes on Bun where write() may not throw.
+      const streamDead =
+        extensionStream &&
+        (extensionStream.writableEnded === true ||
+          extensionStream.destroyed === true ||
+          extensionStream.finished === true);
+
+      if (!extensionStream || streamDead) {
+        if (streamDead) {
+          // Purge the stale reference so the next reconnect overwrites it cleanly.
+          try {
+            extensionStream.end();
+          } catch {}
+          extensionStream = null;
+        }
         if (attempts < 10) {
           setTimeout(() => trySend(attempts + 1), 500);
           return;
         }
-        return reject(new Error("Chrome Extension is not connected to the command stream. Is the extension turned ON and attached to a tab?"));
+        return reject(
+          new Error(
+            "Chrome Extension is not connected to the command stream. Is the extension turned ON and attached to a tab?",
+          ),
+        );
       }
 
       const id = nextCommandId++;
@@ -64,7 +85,9 @@ export function sendCdpCommand(tabId, method, params = {}) {
           setTimeout(() => trySend(attempts + 1), 500);
           return;
         }
-        return reject(new Error("Failed to write to extension stream: " + e.message));
+        return reject(
+          new Error("Failed to write to extension stream: " + e.message),
+        );
       }
 
       setTimeout(() => {

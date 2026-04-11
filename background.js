@@ -2,7 +2,6 @@ const DEFAULT_ENDPOINT = "http://127.0.0.1:31337/log";
 const DEBUGGER_VERSION = "1.3";
 const DECISION_TIMEOUT_MS = 20000;
 
-
 // MANIFEST V3 KEEPALIVE HACK
 // Service workers are killed after 30s of inactivity.
 // We force it to stay alive by periodically pinging a trivial Chrome API.
@@ -13,7 +12,7 @@ function ensureWorkerAlive() {
   if (keepAliveInterval) clearInterval(keepAliveInterval);
   keepAliveInterval = setInterval(() => {
     if (state.enabled) {
-       chrome.runtime.getPlatformInfo(() => {});
+      chrome.runtime.getPlatformInfo(() => {});
     }
   }, 20000); // every 20 seconds
 }
@@ -27,7 +26,7 @@ const state = {
   ruleSyncInterval: null,
   ruleSyncInFlight: false,
   commandStream: null,
-  reconnectTimer: null
+  reconnectTimer: null,
 };
 
 function targetForTab(tabId) {
@@ -37,7 +36,11 @@ function targetForTab(tabId) {
 function isSecureEndpoint(value) {
   try {
     const url = new URL(value);
-    return url.protocol === "https:" || (url.protocol === "http:" && ["127.0.0.1", "localhost"].includes(url.hostname));
+    return (
+      url.protocol === "https:" ||
+      (url.protocol === "http:" &&
+        ["127.0.0.1", "localhost"].includes(url.hostname))
+    );
   } catch {
     return false;
   }
@@ -48,9 +51,11 @@ function normalizeEndpoint(value) {
   return trimmed || DEFAULT_ENDPOINT;
 }
 
-
 function stripEntityHeaders(headers = []) {
-  return headers.filter(h => !/^(content-length|content-encoding|transfer-encoding)$/i.test(h.name));
+  return headers.filter(
+    (h) =>
+      !/^(content-length|content-encoding|transfer-encoding)$/i.test(h.name),
+  );
 }
 
 function headerObjectToArray(headers = {}) {
@@ -99,7 +104,7 @@ async function syncRules() {
 
   try {
     const rulesUrl = new URL(state.endpoint);
-    rulesUrl.pathname = '/rules';
+    rulesUrl.pathname = "/rules";
     const res = await fetch(rulesUrl.href);
     if (res.ok) {
       const nextRules = await res.json();
@@ -111,13 +116,12 @@ async function syncRules() {
   }
 }
 
-
 // --- CDP Command Stream ---
 function getCommandStreamUrl() {
   let baseUrlStr = state.endpoint;
-  if (baseUrlStr.endsWith('/log')) baseUrlStr = baseUrlStr.slice(0, -4);
+  if (baseUrlStr.endsWith("/log")) baseUrlStr = baseUrlStr.slice(0, -4);
   const url = new URL(baseUrlStr);
-  url.pathname = '/api/extension/commands';
+  url.pathname = "/api/extension/commands";
   return url.href;
 }
 
@@ -133,24 +137,36 @@ async function handleIncomingCommand(msg) {
 
     if (isTabCommand) {
       if (msg.method === "Target.createTarget") {
-        const url = typeof msg.params?.url === 'string' ? msg.params.url : 'about:blank';
+        const url =
+          typeof msg.params?.url === "string" ? msg.params.url : "about:blank";
         const tab = await chrome.tabs.create({ url, active: false });
-        if (!tab.id) throw new Error('Failed to create tab');
+        if (!tab.id) throw new Error("Failed to create tab");
 
-        await new Promise(r => setTimeout(r, 200));
-        await chrome.debugger.attach({ tabId: tab.id }, DEBUGGER_VERSION).catch(() => null);
-        await chrome.debugger.sendCommand({ tabId: tab.id }, 'Page.enable').catch(() => null);
-        await chrome.debugger.sendCommand({ tabId: tab.id }, 'Network.enable').catch(() => null);
-        await chrome.debugger.sendCommand(
-          { tabId: tab.id },
-          'Page.addScriptToEvaluateOnNewDocument',
-          {
-            source: "Object.defineProperty(navigator, 'webdriver', { get: () => false }); window.chrome = window.chrome || {}; window.chrome.runtime = window.chrome.runtime || {};"
-          }
-        ).catch(() => null);
+        await new Promise((r) => setTimeout(r, 200));
+        await chrome.debugger
+          .attach({ tabId: tab.id }, DEBUGGER_VERSION)
+          .catch(() => null);
+        await chrome.debugger
+          .sendCommand({ tabId: tab.id }, "Page.enable")
+          .catch(() => null);
+        await chrome.debugger
+          .sendCommand({ tabId: tab.id }, "Network.enable")
+          .catch(() => null);
+        await chrome.debugger
+          .sendCommand(
+            { tabId: tab.id },
+            "Page.addScriptToEvaluateOnNewDocument",
+            {
+              source:
+                "Object.defineProperty(navigator, 'webdriver', { get: () => false }); window.chrome = window.chrome || {}; window.chrome.runtime = window.chrome.runtime || {};",
+            },
+          )
+          .catch(() => null);
 
-        const info = await chrome.debugger.sendCommand({ tabId: tab.id }, 'Target.getTargetInfo').catch(() => null);
-        const targetId = String(info?.targetInfo?.targetId || '').trim();
+        const info = await chrome.debugger
+          .sendCommand({ tabId: tab.id }, "Target.getTargetInfo")
+          .catch(() => null);
+        const targetId = String(info?.targetInfo?.targetId || "").trim();
         await sendCdpResult(msg.id, { targetId, tabId: tab.id }, null);
         return;
       }
@@ -166,7 +182,9 @@ async function handleIncomingCommand(msg) {
         const targetTabId = msg.params?.tabId || state.attachedTabId;
         const tab = await chrome.tabs.get(targetTabId).catch(() => null);
         if (tab?.windowId) {
-          await chrome.windows.update(tab.windowId, { focused: true }).catch(() => {});
+          await chrome.windows
+            .update(tab.windowId, { focused: true })
+            .catch(() => {});
         }
         await chrome.tabs.update(targetTabId, { active: true }).catch(() => {});
         await sendCdpResult(msg.id, { success: true }, null);
@@ -181,7 +199,11 @@ async function handleIncomingCommand(msg) {
     }
 
     const tabId = msg.params?.tabId || msg.tabId || state.attachedTabId;
-    const result = await chrome.debugger.sendCommand({ tabId }, msg.method, msg.params);
+    const result = await chrome.debugger.sendCommand(
+      { tabId },
+      msg.method,
+      msg.params,
+    );
     await sendCdpResult(msg.id, result, null);
   } catch (e) {
     await sendCdpResult(msg.id, null, e?.message || String(e));
@@ -197,24 +219,24 @@ function startCommandStream() {
     const es = new EventSource(getCommandStreamUrl());
     state.commandStream = es;
 
-    es.addEventListener('ready', () => {
-      console.log('Command stream ready.');
+    es.addEventListener("ready", () => {
+      console.log("Command stream ready.");
     });
-    
+
     es.onopen = () => {
-      console.log('Command stream officially OPEN');
+      console.log("Command stream officially OPEN");
     };
 
-    es.addEventListener('ping', () => {
+    es.addEventListener("ping", () => {
       // no-op, just keeps the stream active
     });
 
-    es.addEventListener('message', (event) => {
+    es.addEventListener("message", (event) => {
       let msg;
       try {
         msg = JSON.parse(event.data);
       } catch (e) {
-        console.error('Failed to parse command payload:', e);
+        console.error("Failed to parse command payload:", e);
         return;
       }
       void handleIncomingCommand(msg);
@@ -222,13 +244,15 @@ function startCommandStream() {
 
     es.onerror = () => {
       if (state.enabled && state.commandStream === es) {
-        console.error('Command stream error; Forcing complete teardown and explicit reconnect.');
+        console.error(
+          "Command stream error; Forcing complete teardown and explicit reconnect.",
+        );
         stopCommandStream();
         state.reconnectTimer = setTimeout(startCommandStream, 1500);
       }
     };
   } catch (e) {
-    console.error('Failed to start command stream:', e?.message || String(e));
+    console.error("Failed to start command stream:", e?.message || String(e));
     if (state.enabled) {
       state.reconnectTimer = setTimeout(startCommandStream, 1000);
     }
@@ -253,13 +277,14 @@ async function sendCdpResult(id, result, error) {
   if (!isSecureEndpoint(state.endpoint)) return;
   try {
     let baseUrlStr = state.endpoint;
-    if (baseUrlStr.endsWith('/log')) baseUrlStr = baseUrlStr.replace('/log', '');
+    if (baseUrlStr.endsWith("/log"))
+      baseUrlStr = baseUrlStr.replace("/log", "");
     const url = new URL(baseUrlStr);
-    url.pathname = '/api/extension/cdp-result';
+    url.pathname = "/api/extension/cdp-result";
     await fetch(url.href, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id, result, error })
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, result, error }),
     });
   } catch (e) {}
 }
@@ -268,7 +293,9 @@ function startRuleSync() {
   if (state.ruleSyncInterval) clearInterval(state.ruleSyncInterval);
   state.ruleSyncInFlight = false;
   void syncRules();
-  state.ruleSyncInterval = setInterval(() => { void syncRules(); }, 2000);
+  state.ruleSyncInterval = setInterval(() => {
+    void syncRules();
+  }, 2000);
 }
 
 function stopRuleSync() {
@@ -281,8 +308,12 @@ function stopRuleSync() {
 function evaluateRules(payload, phase) {
   if (!state.rules || state.rules.length === 0) return null;
   for (const rule of state.rules) {
-    if (rule.phase && rule.phase !== phase && rule.phase !== 'both') continue;
-    if (rule.method && rule.method.toUpperCase() !== payload.method.toUpperCase()) continue;
+    if (rule.phase && rule.phase !== phase && rule.phase !== "both") continue;
+    if (
+      rule.method &&
+      rule.method.toUpperCase() !== payload.method.toUpperCase()
+    )
+      continue;
     if (rule.urlPattern && !payload.url.includes(rule.urlPattern)) continue;
     return rule;
   }
@@ -322,11 +353,15 @@ async function attachToTab(tabId) {
     await detachFromTab(state.attachedTabId);
   }
   // Remove the early return so the interval starts even if tabId matches
-  
+
   try {
     await chrome.debugger.attach(targetForTab(tabId), DEBUGGER_VERSION);
   } catch (error) {
-    if (!String(error?.message || error).includes("Another debugger is already attached")) {
+    if (
+      !String(error?.message || error).includes(
+        "Another debugger is already attached",
+      )
+    ) {
       throw error;
     }
   }
@@ -334,7 +369,8 @@ async function attachToTab(tabId) {
   await sendCommand(tabId, "Page.enable");
   await sendCommand(tabId, "Network.enable");
   await sendCommand(tabId, "Page.addScriptToEvaluateOnNewDocument", {
-    source: "Object.defineProperty(navigator, 'webdriver', { get: () => false }); window.chrome = window.chrome || {}; window.chrome.runtime = window.chrome.runtime || {};"
+    source:
+      "Object.defineProperty(navigator, 'webdriver', { get: () => false }); window.chrome = window.chrome || {}; window.chrome.runtime = window.chrome.runtime || {};",
   });
 
   await sendCommand(tabId, "Fetch.enable", {
@@ -351,12 +387,19 @@ async function attachToTab(tabId) {
 }
 
 async function loadSettings() {
-  const stored = await chrome.storage.local.get(["webhookUrl", "isEnabled", "mode", "attachedTabId"]);
+  const stored = await chrome.storage.local.get([
+    "webhookUrl",
+    "isEnabled",
+    "mode",
+    "attachedTabId",
+  ]);
 
   state.endpoint = normalizeEndpoint(stored.webhookUrl);
   state.enabled = stored.isEnabled === true;
   state.mode = stored.mode === "intercept" ? "intercept" : "listen";
-  state.attachedTabId = Number.isInteger(stored.attachedTabId) ? stored.attachedTabId : null;
+  state.attachedTabId = Number.isInteger(stored.attachedTabId)
+    ? stored.attachedTabId
+    : null;
 
   if (state.enabled && state.attachedTabId != null) {
     try {
@@ -411,7 +454,12 @@ async function fetchDecision(payload) {
   }
 }
 
-async function continueResponse(tabId, requestId, responseParams = null, responseBodyBase64 = null) {
+async function continueResponse(
+  tabId,
+  requestId,
+  responseParams = null,
+  responseBodyBase64 = null,
+) {
   try {
     await sendCommand(tabId, "Fetch.continueResponse", { requestId });
   } catch {
@@ -437,14 +485,18 @@ async function continueResponse(tabId, requestId, responseParams = null, respons
 }
 
 async function continuePausedRequest(tabId, params, responseBodyBase64 = null) {
-  const isResponsePhase = params.responseStatusCode !== undefined || params.responseErrorReason !== undefined;
+  const isResponsePhase =
+    params.responseStatusCode !== undefined ||
+    params.responseErrorReason !== undefined;
 
   if (isResponsePhase) {
     await continueResponse(tabId, params.requestId, params, responseBodyBase64);
     return;
   }
 
-  await sendCommand(tabId, "Fetch.continueRequest", { requestId: params.requestId });
+  await sendCommand(tabId, "Fetch.continueRequest", {
+    requestId: params.requestId,
+  });
 }
 
 function fireAndForgetLog(payload) {
@@ -452,7 +504,7 @@ function fireAndForgetLog(payload) {
   fetch(state.endpoint, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload)
+    body: JSON.stringify(payload),
   }).catch(() => {});
 }
 
@@ -461,8 +513,14 @@ async function handleRequestPause(tabId, params) {
 
   // Prevent massive file uploads (multipart/form-data or raw binary streams) from crashing the extension
   // or being corrupted by the Chrome Debugger API when forwarded.
-  const contentType = headerArrayToObject(headerObjectToArray(params.request.headers || {}))['content-type'] || '';
-  if (contentType.includes('multipart/form-data') || requestBody && requestBody.length > 5000000) {
+  const contentType =
+    headerArrayToObject(headerObjectToArray(params.request.headers || {}))[
+      "content-type"
+    ] || "";
+  if (
+    contentType.includes("multipart/form-data") ||
+    (requestBody && requestBody.length > 5000000)
+  ) {
     requestBody = `[Massive Payload Omitted - Content-Type: ${contentType}]`;
   }
 
@@ -485,7 +543,10 @@ async function handleRequestPause(tabId, params) {
     fireAndForgetLog(payload);
 
     if (matchedRule.action === "drop") {
-      await sendCommand(tabId, "Fetch.failRequest", { requestId: params.requestId, errorReason: "BlockedByClient" });
+      await sendCommand(tabId, "Fetch.failRequest", {
+        requestId: params.requestId,
+        errorReason: "BlockedByClient",
+      });
       return;
     }
     if (matchedRule.action === "modify") {
@@ -493,18 +554,27 @@ async function handleRequestPause(tabId, params) {
         requestId: params.requestId,
         url: matchedRule.modifiedUrl,
         method: matchedRule.modifiedMethod,
-        postData: matchedRule.modifiedBody != null ? encodeUtf8ToBase64(matchedRule.modifiedBody) : undefined,
-        headers: matchedRule.modifiedHeaders ? headerObjectToArray(matchedRule.modifiedHeaders) : undefined,
+        postData:
+          matchedRule.modifiedBody != null
+            ? encodeUtf8ToBase64(matchedRule.modifiedBody)
+            : undefined,
+        headers: matchedRule.modifiedHeaders
+          ? headerObjectToArray(matchedRule.modifiedHeaders)
+          : undefined,
       });
       return;
     }
-    await sendCommand(tabId, "Fetch.continueRequest", { requestId: params.requestId });
+    await sendCommand(tabId, "Fetch.continueRequest", {
+      requestId: params.requestId,
+    });
     return;
   }
 
   if (state.mode === "listen") {
     fireAndForgetLog(payload);
-    await sendCommand(tabId, "Fetch.continueRequest", { requestId: params.requestId });
+    await sendCommand(tabId, "Fetch.continueRequest", {
+      requestId: params.requestId,
+    });
     return;
   }
 
@@ -523,13 +593,20 @@ async function handleRequestPause(tabId, params) {
       requestId: params.requestId,
       url: decision.modifiedUrl,
       method: decision.modifiedMethod,
-      postData: decision.modifiedBody != null ? encodeUtf8ToBase64(decision.modifiedBody) : undefined,
-      headers: decision.modifiedHeaders ? headerObjectToArray(decision.modifiedHeaders) : undefined,
+      postData:
+        decision.modifiedBody != null
+          ? encodeUtf8ToBase64(decision.modifiedBody)
+          : undefined,
+      headers: decision.modifiedHeaders
+        ? headerObjectToArray(decision.modifiedHeaders)
+        : undefined,
     });
     return;
   }
 
-  await sendCommand(tabId, "Fetch.continueRequest", { requestId: params.requestId });
+  await sendCommand(tabId, "Fetch.continueRequest", {
+    requestId: params.requestId,
+  });
 }
 
 async function handleResponsePause(tabId, params) {
@@ -538,16 +615,22 @@ async function handleResponsePause(tabId, params) {
   let responseBodyEncoded = false;
 
   try {
-    const bodyResult = await sendCommand(tabId, "Fetch.getResponseBody", { requestId: params.requestId });
+    const bodyResult = await sendCommand(tabId, "Fetch.getResponseBody", {
+      requestId: params.requestId,
+    });
     responseBody = bodyResult.body;
-    responseBodyBase64 = bodyResult.base64Encoded ? bodyResult.body : encodeUtf8ToBase64(bodyResult.body);
+    responseBodyBase64 = bodyResult.base64Encoded
+      ? bodyResult.body
+      : encodeUtf8ToBase64(bodyResult.body);
     responseBodyEncoded = bodyResult.base64Encoded;
     if (bodyResult.base64Encoded) {
       try {
         const binary = atob(bodyResult.body);
-        const bytes = Uint8Array.from(binary, c => c.charCodeAt(0));
+        const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));
         responseBody = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-      } catch(e) { responseBody = bodyResult.body; }
+      } catch (e) {
+        responseBody = bodyResult.body;
+      }
     }
   } catch {
     responseBody = null;
@@ -579,18 +662,30 @@ async function handleResponsePause(tabId, params) {
     fireAndForgetLog(payload);
 
     if (matchedRule.action === "drop") {
-      await sendCommand(tabId, "Fetch.failRequest", { requestId: params.requestId, errorReason: "BlockedByClient" });
+      await sendCommand(tabId, "Fetch.failRequest", {
+        requestId: params.requestId,
+        errorReason: "BlockedByClient",
+      });
       return;
     }
     if (matchedRule.action === "modify") {
-      let responseHeaders = matchedRule.modifiedResponseHeaders ? headerObjectToArray(matchedRule.modifiedResponseHeaders) : [...(params.responseHeaders || [])];
-      if (matchedRule.modifiedResponseBody != null && !matchedRule.modifiedResponseHeaders) {
+      let responseHeaders = matchedRule.modifiedResponseHeaders
+        ? headerObjectToArray(matchedRule.modifiedResponseHeaders)
+        : [...(params.responseHeaders || [])];
+      if (
+        matchedRule.modifiedResponseBody != null &&
+        !matchedRule.modifiedResponseHeaders
+      ) {
         responseHeaders = stripEntityHeaders(responseHeaders);
       }
-      const responseBodyForFulfill = matchedRule.modifiedResponseBody != null ? encodeUtf8ToBase64(matchedRule.modifiedResponseBody) : responseBodyBase64;
+      const responseBodyForFulfill =
+        matchedRule.modifiedResponseBody != null
+          ? encodeUtf8ToBase64(matchedRule.modifiedResponseBody)
+          : responseBodyBase64;
       await sendCommand(tabId, "Fetch.fulfillRequest", {
         requestId: params.requestId,
-        responseCode: matchedRule.modifiedStatusCode || params.responseStatusCode || 200,
+        responseCode:
+          matchedRule.modifiedStatusCode || params.responseStatusCode || 200,
         responseHeaders,
         body: responseBodyForFulfill || "",
       });
@@ -621,17 +716,22 @@ async function handleResponsePause(tabId, params) {
       ? headerObjectToArray(decision.modifiedResponseHeaders)
       : [...(params.responseHeaders || [])];
 
-    if (decision.modifiedResponseBody != null && !decision.modifiedResponseHeaders) {
+    if (
+      decision.modifiedResponseBody != null &&
+      !decision.modifiedResponseHeaders
+    ) {
       responseHeaders = stripEntityHeaders(responseHeaders);
     }
 
-    const responseBodyForFulfill = decision.modifiedResponseBody != null
-      ? encodeUtf8ToBase64(decision.modifiedResponseBody)
-      : responseBodyBase64;
+    const responseBodyForFulfill =
+      decision.modifiedResponseBody != null
+        ? encodeUtf8ToBase64(decision.modifiedResponseBody)
+        : responseBodyBase64;
 
     await sendCommand(tabId, "Fetch.fulfillRequest", {
       requestId: params.requestId,
-      responseCode: decision.modifiedStatusCode || params.responseStatusCode || 200,
+      responseCode:
+        decision.modifiedStatusCode || params.responseStatusCode || 200,
       responseHeaders,
       body: responseBodyForFulfill || "",
     });
@@ -660,7 +760,9 @@ async function handlePausedRequest(tabId, params) {
     // Ignore parsing errors
   }
 
-  const isResponsePhase = params.responseStatusCode !== undefined || params.responseErrorReason !== undefined;
+  const isResponsePhase =
+    params.responseStatusCode !== undefined ||
+    params.responseErrorReason !== undefined;
 
   if (isResponsePhase) {
     await handleResponsePause(tabId, params);
@@ -671,14 +773,18 @@ async function handlePausedRequest(tabId, params) {
 }
 
 chrome.runtime.onInstalled.addListener(() => {
-  chrome.storage.local.get(["webhookUrl", "isEnabled", "mode", "attachedTabId"]).then((stored) => {
-    chrome.storage.local.set({
-      webhookUrl: stored.webhookUrl || DEFAULT_ENDPOINT,
-      isEnabled: stored.isEnabled === true,
-      mode: stored.mode === "intercept" ? "intercept" : "listen",
-      attachedTabId: Number.isInteger(stored.attachedTabId) ? stored.attachedTabId : null,
+  chrome.storage.local
+    .get(["webhookUrl", "isEnabled", "mode", "attachedTabId"])
+    .then((stored) => {
+      chrome.storage.local.set({
+        webhookUrl: stored.webhookUrl || DEFAULT_ENDPOINT,
+        isEnabled: stored.isEnabled === true,
+        mode: stored.mode === "intercept" ? "intercept" : "listen",
+        attachedTabId: Number.isInteger(stored.attachedTabId)
+          ? stored.attachedTabId
+          : null,
+      });
     });
-  });
 });
 
 chrome.runtime.onStartup.addListener(() => {
@@ -687,16 +793,15 @@ chrome.runtime.onStartup.addListener(() => {
 
 loadSettings();
 
-
 async function sendCdpEvent(event, params) {
   if (!isSecureEndpoint(state.endpoint)) return;
   try {
     const url = new URL(state.endpoint);
-    url.pathname = '/api/extension/cdp-result';
+    url.pathname = "/api/extension/cdp-result";
     await fetch(url.href, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ event, params })
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ event, params }),
     });
   } catch (e) {}
 }
@@ -704,7 +809,13 @@ async function sendCdpEvent(event, params) {
 chrome.debugger.onEvent.addListener(async (source, method, params) => {
   // If attachedTabId matches, send event over
   if (state.attachedTabId && source.tabId === state.attachedTabId) {
-    if (method.startsWith('Fetch.') || (method.startsWith('Network.') && method !== 'Network.webSocketFrameSent' && method !== 'Network.webSocketFrameReceived' && method !== 'Network.webSocketCreated')) {
+    if (
+      method.startsWith("Fetch.") ||
+      (method.startsWith("Network.") &&
+        method !== "Network.webSocketFrameSent" &&
+        method !== "Network.webSocketFrameReceived" &&
+        method !== "Network.webSocketCreated")
+    ) {
       // Existing OpenClaw handling handles these
     } else {
       await sendCdpEvent(method, params);
@@ -762,10 +873,10 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
   if (message?.type === "SET_MODE") {
     state.mode = message.mode === "intercept" ? "intercept" : "listen";
-    if (state.mode === "intercept" && state.attachedTabId) {
+    // The command stream is needed for ALL MCP browser tools regardless of
+    // intercept vs. listen mode — never shut it down just because the mode changed.
+    if (state.enabled && state.attachedTabId) {
       startCommandStream();
-    } else {
-      stopCommandStream();
     }
     persistState().then(() => {
       sendResponse({ ok: true, mode: state.mode });
@@ -783,7 +894,10 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     const nextEndpoint = normalizeEndpoint(rawEndpoint);
 
     if (!isSecureEndpoint(nextEndpoint)) {
-      sendResponse({ ok: false, error: "Use HTTPS or localhost/127.0.0.1 over HTTP." });
+      sendResponse({
+        ok: false,
+        error: "Use HTTPS or localhost/127.0.0.1 over HTTP.",
+      });
       return false;
     }
 
@@ -802,19 +916,29 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     (async () => {
       if (enable) {
         if (!isSecureEndpoint(state.endpoint)) {
-          sendResponse({ ok: false, error: "Save a valid HTTPS or localhost webhook first." });
+          sendResponse({
+            ok: false,
+            error: "Save a valid HTTPS or localhost webhook first.",
+          });
           return;
         }
 
-        await attachToTab(tabId);
+        // Must set state.enabled = true BEFORE calling attachToTab so that
+        // startCommandStream() (called at the tail of attachToTab) passes its
+        // guard check.  We roll it back below if attachToTab throws.
         state.enabled = true;
+        await attachToTab(tabId);
       } else {
         await detachFromTab(state.attachedTabId);
         state.enabled = false;
       }
 
       await persistState();
-      sendResponse({ ok: true, enabled: state.enabled, attachedTabId: state.attachedTabId });
+      sendResponse({
+        ok: true,
+        enabled: state.enabled,
+        attachedTabId: state.attachedTabId,
+      });
     })().catch(async (error) => {
       state.enabled = false;
       state.attachedTabId = null;
