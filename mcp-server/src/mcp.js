@@ -259,7 +259,7 @@ function createMcpServerInstance() {
     if (request.params.name === "browser_evaluate") {
       const args = request.params.arguments || {};
       try {
-        const res = await sendCdpCommand(null, "Runtime.evaluate", { expression: args.expression, returnByValue: true });
+        const res = await sendCdpCommand(null, "Runtime.evaluate", { expression: args.expression, returnByValue: true, awaitPromise: true });
         if (res.exceptionDetails) {
            return { isError: true, content: [{ type: "text", text: "Exception: " + res.exceptionDetails.exception.description }] };
         }
