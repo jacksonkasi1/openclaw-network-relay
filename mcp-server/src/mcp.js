@@ -371,9 +371,16 @@ function createMcpServerInstance() {
       try {
         const expression = `
           (() => {
-            const el = document.querySelector('${args.selector.replace(/'/g, "\\'")}');
-            if (!el) return { error: 'Element not found' };
-            el.value = '${args.text.replace(/'/g, "\\\'")}';
+            let el;
+            if (${JSON.stringify(args.id)} != null && window.__openclawInteractables) {
+               el = window.__openclawInteractables.get(Number(${JSON.stringify(args.id)}));
+            } else if (${JSON.stringify(args.selector)}) {
+               el = document.querySelector(${JSON.stringify(args.selector)});
+            }
+            if (!el) return { error: 'Element not found! Did you run browser_extract_dom first?' };
+            el.scrollIntoView({block: "center", inline: "center"});
+            el.focus();
+            el.value = ${JSON.stringify(args.text)};
             el.dispatchEvent(new Event('input', { bubbles: true }));
             el.dispatchEvent(new Event('change', { bubbles: true }));
             return { ok: true };
@@ -381,7 +388,7 @@ function createMcpServerInstance() {
         `;
         const res = await sendCdpCommand(null, "Runtime.evaluate", { expression, returnByValue: true });
         if (res.result?.value?.error) return { isError: true, content: [{ type: "text", text: res.result.value.error }] };
-        return { content: [{ type: "text", text: `Typed into ${args.selector}` }] };
+        return { content: [{ type: "text", text: `Typed text successfully.` }] };
       } catch (e) {
         return { isError: true, content: [{ type: "text", text: e.message }] };
       }
