@@ -503,7 +503,9 @@ export const MCP_TOOLS = [
   {
     name: "browser_get_console_logs",
     description:
-      "Get browser console messages (log/warn/error/info/debug). Auto-installs a hook on first call — no setup needed. Essential for reading React errors, verbose debug output, and accidentally exposed API keys / tokens that developers left in production.",
+      "Get ALL browser console messages — exactly what Chrome DevTools shows. Uses the CDP Log domain (captures CSP violations, runtime.lastError, extension errors, network errors) PLUS a JS-side hook (captures console.log/warn/error/info/debug with full parameters). " +
+      "Call with early_install:true right after navigation to install a persistent hook that survives page reloads. " +
+      "Filter by level (error/warn/log) or by source (security=CSP violations, javascript=uncaught errors, console-api=console.* calls, network=network errors).",
     inputSchema: {
       type: "object",
       properties: {
@@ -511,9 +513,43 @@ export const MCP_TOOLS = [
           type: "array",
           items: {
             type: "string",
-            enum: ["log", "warn", "error", "info", "debug"],
+            enum: [
+              "verbose",
+              "info",
+              "warning",
+              "error",
+              "log",
+              "warn",
+              "debug",
+            ],
           },
-          description: "Only return these log levels (omit for all)",
+          description:
+            "Only return messages of these severity levels (omit for all)",
+        },
+        source_filter: {
+          type: "array",
+          items: {
+            type: "string",
+            enum: [
+              "console-api",
+              "javascript",
+              "network",
+              "security",
+              "storage",
+              "rendering",
+              "deprecation",
+              "worker",
+              "other",
+              "promise",
+            ],
+          },
+          description:
+            "Only return messages from these CDP sources. 'security' = CSP violations, 'javascript' = uncaught errors/runtime.lastError, 'console-api' = console.log/warn/error calls, 'promise' = unhandled rejections.",
+        },
+        early_install: {
+          type: "boolean",
+          description:
+            "Install the hook as a Page.addScriptToEvaluateOnNewDocument persistent script so it captures messages from the very first line of JS on every future navigation/reload. Use this immediately after attaching to a tab.",
         },
         clear: {
           type: "boolean",
@@ -521,7 +557,7 @@ export const MCP_TOOLS = [
         },
         limit: {
           type: "number",
-          description: "Max messages to return (default 100)",
+          description: "Max messages to return (default 200)",
         },
       },
     },
