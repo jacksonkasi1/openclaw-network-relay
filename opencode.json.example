@@ -1,0 +1,44 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "openclaw-interceptor": {
+      "type": "local",
+      "command": ["bun", "run", "./mcp-server/src/index.js"],
+      "enabled": true
+    },
+    "h1-brain": {
+      "type": "local",
+      "command": [
+        "./3r-party-mcp-servers/h1-brain/venv/bin/python",
+        "./3r-party-mcp-servers/h1-brain/server.py"
+      ],
+      "environment": {
+        "H1_API_TOKEN": "xxxxxx",
+        "H1_USERNAME": "<USERNAME>"
+      },
+      "enabled": true
+    },
+    "hackerone": {
+      "type": "local",
+      "command": [
+        "node",
+        "./3r-party-mcp-servers/hackerone-mcp-server/dist/index.js"
+      ],
+      "environment": {
+        "H1_API_TOKEN": "xxxxxx",
+        "H1_USERNAME": "<USERNAME>"
+      },
+      "enabled": true
+    }
+  },
+  "permissions": {
+    "read": "allow",
+    "edit": "allow",
+    "glob": "allow",
+    "grep": "allow",
+    "list": "allow",
+    "bash": "allow",
+    "task": "allow",
+    "webfetch": "ask"
+  }
+}
