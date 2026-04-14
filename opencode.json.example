@@ -1,5 +1,6 @@
 {
   "$schema": "https://opencode.ai/config.json",
+  "permission": "allow",
   "mcp": {
     "openclaw-interceptor": {
       "type": "local",
@@ -30,15 +31,5 @@
       },
       "enabled": true
     }
-  },
-  "permissions": {
-    "read": "allow",
-    "edit": "allow",
-    "glob": "allow",
-    "grep": "allow",
-    "list": "allow",
-    "bash": "allow",
-    "task": "allow",
-    "webfetch": "ask"
   }
 }
