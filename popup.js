@@ -26,7 +26,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     const activeTab = tabs[0] || null;
 
     currentTabId = activeTab?.id ?? null;
-    currentTabEl.textContent = activeTab?.url || activeTab?.title || "No active tab";
+    currentTabEl.textContent =
+      activeTab?.url || activeTab?.title || "No active tab";
 
     const status = await chrome.runtime.sendMessage({ type: "GET_STATUS" });
     webhookUrlInput.value = status.endpoint || "";
@@ -34,17 +35,24 @@ document.addEventListener("DOMContentLoaded", async () => {
       modeSelect.value = status.mode;
     }
     attachedTabEl.textContent = status.attachedTabLabel || "Not attached";
-    setToggleState(status.enabled === true && status.attachedTabId === currentTabId);
+    setToggleState(
+      status.enabled === true &&
+        (status.attachedTabIds || []).includes(currentTabId),
+    );
   }
 
   if (modeSelect) {
     modeSelect.addEventListener("change", async () => {
       const result = await chrome.runtime.sendMessage({
         type: "SET_MODE",
-        mode: modeSelect.value
+        mode: modeSelect.value,
       });
       if (result.ok) {
-        setStatus(result.mode === "listen" ? "Listening & Logging traffic." : "Intercepting & Pausing traffic.");
+        setStatus(
+          result.mode === "listen"
+            ? "Listening & Logging traffic."
+            : "Intercepting & Pausing traffic.",
+        );
       }
     });
   }
@@ -57,7 +65,10 @@ document.addEventListener("DOMContentLoaded", async () => {
       return;
     }
 
-    const result = await chrome.runtime.sendMessage({ type: "SAVE_ENDPOINT", endpoint });
+    const result = await chrome.runtime.sendMessage({
+      type: "SAVE_ENDPOINT",
+      endpoint,
+    });
     setStatus(result.ok ? "Endpoint saved." : result.error, !result.ok);
   });
 
@@ -78,7 +89,12 @@ document.addEventListener("DOMContentLoaded", async () => {
       return;
     }
 
-    setStatus(result.enabled ? "Interception attached to current tab." : "Interception disabled.");
+    const isNowAttached = (result.attachedTabIds || []).includes(currentTabId);
+    setStatus(
+      isNowAttached
+        ? "Interception attached to current tab."
+        : "Interception disabled.",
+    );
     await refreshStatus();
   });
 

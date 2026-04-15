@@ -5,6 +5,7 @@ export const MCP_TOOLS = [
     inputSchema: {
       type: "object",
       properties: {
+        tabId: { type: 'integer', description: 'Target tab ID (optional, defaults to first attached tab)' },
         url: { type: "string", description: "URL to open in the new tab" },
       },
       required: ["url"],
@@ -16,6 +17,7 @@ export const MCP_TOOLS = [
     inputSchema: {
       type: "object",
       properties: {
+        tabId: { type: 'integer', description: 'Target tab ID (optional, defaults to first attached tab)' },
         tabId: {
           type: "number",
           description:
@@ -31,6 +33,7 @@ export const MCP_TOOLS = [
     inputSchema: {
       type: "object",
       properties: {
+        tabId: { type: 'integer', description: 'Target tab ID (optional, defaults to first attached tab)' },
         tabId: {
           type: "number",
           description: "The ID of the tab to activate.",
@@ -45,7 +48,8 @@ export const MCP_TOOLS = [
       "Get a list of all open tabs in the browser, including their IDs, titles, and URLs.",
     inputSchema: {
       type: "object",
-      properties: {},
+      properties: {
+        tabId: { type: 'integer', description: 'Target tab ID (optional, defaults to first attached tab)' },},
     },
   },
   {
@@ -55,6 +59,7 @@ export const MCP_TOOLS = [
     inputSchema: {
       type: "object",
       properties: {
+        tabId: { type: 'integer', description: 'Target tab ID (optional, defaults to first attached tab)' },
         query: {
           type: "string",
           description:
@@ -72,6 +77,7 @@ export const MCP_TOOLS = [
     inputSchema: {
       type: "object",
       properties: {
+        tabId: { type: 'integer', description: 'Target tab ID (optional, defaults to first attached tab)' },
         name: { type: "string", description: "Readable name for this rule" },
         folder: {
           type: "string",
@@ -110,14 +116,16 @@ export const MCP_TOOLS = [
   {
     name: "list_rules",
     description: "List all currently deployed Zero-Latency rules.",
-    inputSchema: { type: "object", properties: {} },
+    inputSchema: { type: "object", properties: {
+        tabId: { type: 'integer', description: 'Target tab ID (optional, defaults to first attached tab)' },} },
   },
   {
     name: "remove_rule",
     description: "Remove a specific deployed rule by its ID.",
     inputSchema: {
       type: "object",
-      properties: { id: { type: "string" } },
+      properties: {
+        tabId: { type: 'integer', description: 'Target tab ID (optional, defaults to first attached tab)' }, id: { type: "string" } },
       required: ["id"],
     },
   },
@@ -125,7 +133,8 @@ export const MCP_TOOLS = [
     name: "clear_all_rules",
     description:
       "Permanently delete ALL Zero-Latency interception rules from the SQLite database.",
-    inputSchema: { type: "object", properties: {} },
+    inputSchema: { type: "object", properties: {
+        tabId: { type: 'integer', description: 'Target tab ID (optional, defaults to first attached tab)' },} },
   },
 
   {
@@ -135,6 +144,7 @@ export const MCP_TOOLS = [
     inputSchema: {
       type: "object",
       properties: {
+        tabId: { type: 'integer', description: 'Target tab ID (optional, defaults to first attached tab)' },
         method: {
           type: "string",
           description: "CDP method name (e.g. 'Page.navigate')",
@@ -160,6 +170,7 @@ export const MCP_TOOLS = [
     inputSchema: {
       type: "object",
       properties: {
+        tabId: { type: 'integer', description: 'Target tab ID (optional, defaults to first attached tab)' },
         format: {
           type: "string",
           enum: ["markdown", "html", "text"],
@@ -176,6 +187,7 @@ export const MCP_TOOLS = [
     inputSchema: {
       type: "object",
       properties: {
+        tabId: { type: 'integer', description: 'Target tab ID (optional, defaults to first attached tab)' },
         payload: {
           type: "string",
           description: "The JavaScript payload to execute",
@@ -190,6 +202,12 @@ export const MCP_TOOLS = [
     inputSchema: {
       type: "object",
       properties: {
+        tabId: { type: 'integer', description: 'Target tab ID (optional, defaults to first attached tab)' },
+        tabId: {
+          type: "integer",
+          description:
+            "Target tab ID (optional, defaults to first attached tab)",
+        },
         url: { type: "string" },
       },
       required: ["url"],
@@ -202,6 +220,7 @@ export const MCP_TOOLS = [
     inputSchema: {
       type: "object",
       properties: {
+        tabId: { type: 'integer', description: 'Target tab ID (optional, defaults to first attached tab)' },
         expression: {
           type: "string",
           description: "JavaScript code to evaluate",
@@ -217,6 +236,7 @@ export const MCP_TOOLS = [
     inputSchema: {
       type: "object",
       properties: {
+        tabId: { type: 'integer', description: 'Target tab ID (optional, defaults to first attached tab)' },
         annotate: {
           type: "boolean",
           description:
@@ -232,6 +252,7 @@ export const MCP_TOOLS = [
     inputSchema: {
       type: "object",
       properties: {
+        tabId: { type: 'integer', description: 'Target tab ID (optional, defaults to first attached tab)' },
         id: {
           type: "number",
           description: "Numeric ID from browser_extract_dom markdown (e.g. 5)",
@@ -247,6 +268,7 @@ export const MCP_TOOLS = [
     inputSchema: {
       type: "object",
       properties: {
+        tabId: { type: 'integer', description: 'Target tab ID (optional, defaults to first attached tab)' },
         id: {
           type: "number",
           description: "Numeric ID from browser_extract_dom",
@@ -267,6 +289,7 @@ export const MCP_TOOLS = [
     inputSchema: {
       type: "object",
       properties: {
+        tabId: { type: 'integer', description: 'Target tab ID (optional, defaults to first attached tab)' },
         id: {
           type: "number",
           description: "Numeric ID of the download link/button",
@@ -280,7 +303,8 @@ export const MCP_TOOLS = [
     description: "Get all browser cookies for the current page.",
     inputSchema: {
       type: "object",
-      properties: {},
+      properties: {
+        tabId: { type: 'integer', description: 'Target tab ID (optional, defaults to first attached tab)' },},
     },
   },
   {
@@ -289,11 +313,13 @@ export const MCP_TOOLS = [
     inputSchema: {
       type: "object",
       properties: {
+        tabId: { type: 'integer', description: 'Target tab ID (optional, defaults to first attached tab)' },
         cookies: {
           type: "array",
           items: {
             type: "object",
             properties: {
+        tabId: { type: 'integer', description: 'Target tab ID (optional, defaults to first attached tab)' },
               name: { type: "string" },
               value: { type: "string" },
               domain: { type: "string" },
@@ -313,6 +339,7 @@ export const MCP_TOOLS = [
     inputSchema: {
       type: "object",
       properties: {
+        tabId: { type: 'integer', description: 'Target tab ID (optional, defaults to first attached tab)' },
         id: {
           type: "number",
           description: "Numeric ID from browser_extract_dom markdown (e.g. 12)",
@@ -328,7 +355,8 @@ export const MCP_TOOLS = [
     name: "get_pending_requests",
     description:
       "List all currently paused browser intercepts. Includes request-phase and response-phase events.",
-    inputSchema: { type: "object", properties: {} },
+    inputSchema: { type: "object", properties: {
+        tabId: { type: 'integer', description: 'Target tab ID (optional, defaults to first attached tab)' },} },
   },
   {
     name: "get_traffic_history",
@@ -337,6 +365,7 @@ export const MCP_TOOLS = [
     inputSchema: {
       type: "object",
       properties: {
+        tabId: { type: 'integer', description: 'Target tab ID (optional, defaults to first attached tab)' },
         limit: {
           type: "number",
           description: "Number of recent items to return (default 50, max 100)",
@@ -365,6 +394,7 @@ export const MCP_TOOLS = [
     inputSchema: {
       type: "object",
       properties: {
+        tabId: { type: 'integer', description: 'Target tab ID (optional, defaults to first attached tab)' },
         log_id: {
           type: "string",
           description: "The ID of the traffic log to deeply inspect",
@@ -380,6 +410,7 @@ export const MCP_TOOLS = [
     inputSchema: {
       type: "object",
       properties: {
+        tabId: { type: 'integer', description: 'Target tab ID (optional, defaults to first attached tab)' },
         log_id: {
           type: "string",
           description: "The ID of the traffic log to organize",
@@ -396,7 +427,8 @@ export const MCP_TOOLS = [
     name: "clear_traffic_logs",
     description:
       "Permanently delete ALL traffic history logs from the SQLite database.",
-    inputSchema: { type: "object", properties: {} },
+    inputSchema: { type: "object", properties: {
+        tabId: { type: 'integer', description: 'Target tab ID (optional, defaults to first attached tab)' },} },
   },
   {
     name: "replay_request",
@@ -405,6 +437,7 @@ export const MCP_TOOLS = [
     inputSchema: {
       type: "object",
       properties: {
+        tabId: { type: 'integer', description: 'Target tab ID (optional, defaults to first attached tab)' },
         url: {
           type: "string",
           description: "The full URL to send the request to",
@@ -433,6 +466,7 @@ export const MCP_TOOLS = [
     inputSchema: {
       type: "object",
       properties: {
+        tabId: { type: 'integer', description: 'Target tab ID (optional, defaults to first attached tab)' },
         id: { type: "string", description: "The paused intercept ID" },
         action: {
           type: "string",
@@ -460,6 +494,12 @@ export const MCP_TOOLS = [
     inputSchema: {
       type: "object",
       properties: {
+        tabId: { type: 'integer', description: 'Target tab ID (optional, defaults to first attached tab)' },
+        tabId: {
+          type: "integer",
+          description:
+            "Target tab ID (optional, defaults to first attached tab)",
+        },
         wait_type: {
           type: "string",
           enum: ["selector", "dom_stable", "network_idle"],
@@ -486,6 +526,7 @@ export const MCP_TOOLS = [
     inputSchema: {
       type: "object",
       properties: {
+        tabId: { type: 'integer', description: 'Target tab ID (optional, defaults to first attached tab)' },
         action: {
           type: "string",
           enum: ["accept", "dismiss"],
@@ -509,6 +550,7 @@ export const MCP_TOOLS = [
     inputSchema: {
       type: "object",
       properties: {
+        tabId: { type: 'integer', description: 'Target tab ID (optional, defaults to first attached tab)' },
         level_filter: {
           type: "array",
           items: {
@@ -570,6 +612,7 @@ export const MCP_TOOLS = [
     inputSchema: {
       type: "object",
       properties: {
+        tabId: { type: 'integer', description: 'Target tab ID (optional, defaults to first attached tab)' },
         id: {
           type: "number",
           description: "Numeric ID from browser_extract_dom markdown",
@@ -586,6 +629,7 @@ export const MCP_TOOLS = [
     inputSchema: {
       type: "object",
       properties: {
+        tabId: { type: 'integer', description: 'Target tab ID (optional, defaults to first attached tab)' },
         key: {
           type: "string",
           enum: [
@@ -621,6 +665,7 @@ export const MCP_TOOLS = [
     inputSchema: {
       type: "object",
       properties: {
+        tabId: { type: 'integer', description: 'Target tab ID (optional, defaults to first attached tab)' },
         from_id: {
           type: "number",
           description: "Source element numeric ID from browser_extract_dom",
@@ -645,6 +690,7 @@ export const MCP_TOOLS = [
     inputSchema: {
       type: "object",
       properties: {
+        tabId: { type: 'integer', description: 'Target tab ID (optional, defaults to first attached tab)' },
         preset: {
           type: "string",
           enum: [
@@ -685,7 +731,8 @@ export const MCP_TOOLS = [
       "Scan all JavaScript-accessible state for secrets: JWTs, bearer tokens, API keys, AWS access keys, private keys, and passwords. Searches localStorage, sessionStorage, cookies, window globals, and inline <script> tags.",
     inputSchema: {
       type: "object",
-      properties: {},
+      properties: {
+        tabId: { type: 'integer', description: 'Target tab ID (optional, defaults to first attached tab)' },},
     },
   },
 
@@ -695,7 +742,8 @@ export const MCP_TOOLS = [
       "Inject a WebSocket interceptor into the page. Captures ALL future WebSocket connections and logs their frames. Run this BEFORE the page creates WebSocket connections (e.g. right after navigation). Required before using browser_websocket_send.",
     inputSchema: {
       type: "object",
-      properties: {},
+      properties: {
+        tabId: { type: 'integer', description: 'Target tab ID (optional, defaults to first attached tab)' },},
     },
   },
 
@@ -706,6 +754,7 @@ export const MCP_TOOLS = [
     inputSchema: {
       type: "object",
       properties: {
+        tabId: { type: 'integer', description: 'Target tab ID (optional, defaults to first attached tab)' },
         include_log: {
           type: "boolean",
           description: "Also return the frame history (default false)",
@@ -725,6 +774,7 @@ export const MCP_TOOLS = [
     inputSchema: {
       type: "object",
       properties: {
+        tabId: { type: 'integer', description: 'Target tab ID (optional, defaults to first attached tab)' },
         id: {
           type: "number",
           description: "WebSocket connection ID from browser_websocket_list",
@@ -745,6 +795,7 @@ export const MCP_TOOLS = [
     inputSchema: {
       type: "object",
       properties: {
+        tabId: { type: 'integer', description: 'Target tab ID (optional, defaults to first attached tab)' },
         format: {
           type: "string",
           enum: ["markdown", "html"],
@@ -766,6 +817,7 @@ export const MCP_TOOLS = [
     inputSchema: {
       type: "object",
       properties: {
+        tabId: { type: 'integer', description: 'Target tab ID (optional, defaults to first attached tab)' },
         url: {
           type: "string",
           description:
@@ -837,6 +889,7 @@ export const MCP_TOOLS = [
     inputSchema: {
       type: "object",
       properties: {
+        tabId: { type: 'integer', description: 'Target tab ID (optional, defaults to first attached tab)' },
         message: {
           type: "string",
           description:

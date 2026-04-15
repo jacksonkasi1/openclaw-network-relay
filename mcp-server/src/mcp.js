@@ -408,10 +408,14 @@ function createMcpServerInstance() {
           `;
         }
 
-        const res = await sendCdpCommand(null, "Runtime.evaluate", {
-          expression,
-          returnByValue: true,
-        });
+        const res = await sendCdpCommand(
+          args.tabId || null,
+          "Runtime.evaluate",
+          {
+            expression,
+            returnByValue: true,
+          },
+        );
         if (res.exceptionDetails) {
           return {
             isError: true,
@@ -441,10 +445,14 @@ function createMcpServerInstance() {
     if (request.params.name === "browser_inject_payload") {
       const args = request.params.arguments || {};
       try {
-        const res = await sendCdpCommand(null, "Runtime.evaluate", {
-          expression: args.payload,
-          returnByValue: true,
-        });
+        const res = await sendCdpCommand(
+          args.tabId || null,
+          "Runtime.evaluate",
+          {
+            expression: args.payload,
+            returnByValue: true,
+          },
+        );
         if (res.exceptionDetails) {
           return {
             isError: true,
@@ -470,7 +478,7 @@ function createMcpServerInstance() {
     if (request.params.name === "browser_new_tab") {
       const args = request.params.arguments || {};
       try {
-        const res = await sendCdpCommand(null, "Target.createTarget", {
+        const res = await sendCdpCommand(args.tabId || null, "Target.createTarget", {
           url: args.url,
         });
         return {
@@ -493,7 +501,9 @@ function createMcpServerInstance() {
     if (request.params.name === "browser_close_tab") {
       const args = request.params.arguments || {};
       try {
-        await sendCdpCommand(null, "Target.closeTarget", { tabId: args.tabId });
+        await sendCdpCommand(args.tabId || null, "Target.closeTarget", {
+          tabId: args.tabId,
+        });
         return {
           content: [{ type: "text", text: "Successfully closed tab." }],
         };
@@ -505,7 +515,7 @@ function createMcpServerInstance() {
     if (request.params.name === "browser_switch_tab") {
       const args = request.params.arguments || {};
       try {
-        await sendCdpCommand(null, "Target.activateTarget", {
+        await sendCdpCommand(args.tabId || null, "Target.activateTarget", {
           tabId: args.tabId,
         });
         return {
@@ -518,7 +528,7 @@ function createMcpServerInstance() {
 
     if (request.params.name === "browser_list_tabs") {
       try {
-        const res = await sendCdpCommand(null, "Target.getTabs", {});
+        const res = await sendCdpCommand(args.tabId || null, "Target.getTabs", {});
         const tabs = res.tabs.map((t) => ({
           id: t.id,
           windowId: t.windowId,
@@ -538,7 +548,9 @@ function createMcpServerInstance() {
     if (request.params.name === "browser_navigate") {
       const args = request.params.arguments || {};
       try {
-        await sendCdpCommand(null, "Page.navigate", { url: args.url });
+        await sendCdpCommand(args.tabId || null, "Page.navigate", {
+          url: args.url,
+        });
         return {
           content: [{ type: "text", text: `Navigating to ${args.url}...` }],
         };
@@ -550,11 +562,15 @@ function createMcpServerInstance() {
     if (request.params.name === "browser_evaluate") {
       const args = request.params.arguments || {};
       try {
-        const res = await sendCdpCommand(null, "Runtime.evaluate", {
-          expression: args.expression,
-          returnByValue: true,
-          awaitPromise: true,
-        });
+        const res = await sendCdpCommand(
+          args.tabId || null,
+          "Runtime.evaluate",
+          {
+            expression: args.expression,
+            returnByValue: true,
+            awaitPromise: true,
+          },
+        );
         if (res.exceptionDetails) {
           return {
             isError: true,
@@ -622,10 +638,14 @@ function createMcpServerInstance() {
             })();
           `;
 
-          const drawRes = await sendCdpCommand(null, "Runtime.evaluate", {
-            expression: drawExpression,
-            returnByValue: true,
-          });
+          const drawRes = await sendCdpCommand(
+            args.tabId || null,
+            "Runtime.evaluate",
+            {
+              expression: drawExpression,
+              returnByValue: true,
+            },
+          );
           if (drawRes.result?.value?.error) {
             return {
               isError: true,
@@ -637,13 +657,17 @@ function createMcpServerInstance() {
         // Wait a tiny bit for rendering
         await new Promise((r) => setTimeout(r, 100));
 
-        const res = await sendCdpCommand(null, "Page.captureScreenshot", {
-          format: "png",
-        });
+        const res = await sendCdpCommand(
+          args.tabId || null,
+          "Page.captureScreenshot",
+          {
+            format: "png",
+          },
+        );
 
         if (args.annotate) {
           const eraseExpression = `document.querySelectorAll('.openclaw-som-overlay').forEach(e => e.remove());`;
-          await sendCdpCommand(null, "Runtime.evaluate", {
+          await sendCdpCommand(args.tabId || null, "Runtime.evaluate", {
             expression: eraseExpression,
           });
         }
@@ -682,10 +706,14 @@ function createMcpServerInstance() {
             return { ok: true };
           })();
         `;
-        const res = await sendCdpCommand(null, "Runtime.evaluate", {
-          expression,
-          returnByValue: true,
-        });
+        const res = await sendCdpCommand(
+          args.tabId || null,
+          "Runtime.evaluate",
+          {
+            expression,
+            returnByValue: true,
+          },
+        );
         if (res.result?.value?.error)
           return {
             isError: true,
@@ -714,10 +742,14 @@ function createMcpServerInstance() {
             return el;
           })();
         `;
-        const res = await sendCdpCommand(null, "Runtime.evaluate", {
-          expression,
-          returnByValue: false,
-        });
+        const res = await sendCdpCommand(
+          args.tabId || null,
+          "Runtime.evaluate",
+          {
+            expression,
+            returnByValue: false,
+          },
+        );
         if (res.result?.value?.error)
           return {
             isError: true,
@@ -735,8 +767,8 @@ function createMcpServerInstance() {
         const huntingDir = path.resolve(process.cwd(), "../hunting");
         const filePath = path.resolve(huntingDir, args.filename);
 
-        await sendCdpCommand(null, "DOM.enable", {});
-        await sendCdpCommand(null, "DOM.setFileInputFiles", {
+        await sendCdpCommand(args.tabId || null, "DOM.enable", {});
+        await sendCdpCommand(args.tabId || null, "DOM.setFileInputFiles", {
           files: [filePath],
           objectId: res.result.objectId,
         });
@@ -758,7 +790,7 @@ function createMcpServerInstance() {
         const huntingDir = path.resolve(process.cwd(), "../hunting");
 
         // Use Page.setDownloadBehavior
-        await sendCdpCommand(null, "Page.setDownloadBehavior", {
+        await sendCdpCommand(args.tabId || null, "Page.setDownloadBehavior", {
           behavior: "allow",
           downloadPath: huntingDir,
         });
@@ -777,7 +809,7 @@ function createMcpServerInstance() {
             return { ok: true };
           })();
         `;
-        const res = await sendCdpCommand(null, "Runtime.evaluate", {
+        const res = await sendCdpCommand(args.tabId || null, "Runtime.evaluate", {
           expression,
           returnByValue: true,
         });
@@ -802,7 +834,7 @@ function createMcpServerInstance() {
 
     if (request.params.name === "browser_get_cookies") {
       try {
-        const res = await sendCdpCommand(null, "Network.getCookies", {});
+        const res = await sendCdpCommand(args.tabId || null, "Network.getCookies", {});
         return {
           content: [
             { type: "text", text: JSON.stringify(res.cookies || [], null, 2) },
@@ -824,7 +856,7 @@ function createMcpServerInstance() {
             ],
           };
         }
-        await sendCdpCommand(null, "Network.setCookies", {
+        await sendCdpCommand(args.tabId || null, "Network.setCookies", {
           cookies: args.cookies,
         });
         return {
@@ -855,7 +887,7 @@ function createMcpServerInstance() {
             return { ok: true };
           })();
         `;
-        const res = await sendCdpCommand(null, "Runtime.evaluate", {
+        const res = await sendCdpCommand(args.tabId || null, "Runtime.evaluate", {
           expression,
           returnByValue: true,
         });
@@ -1172,7 +1204,7 @@ function createMcpServerInstance() {
             setTimeout(() => resolve('network_idle timeout'), ${timeoutMs});
           })`;
         }
-        const res = await sendCdpCommand(null, "Runtime.evaluate", {
+        const res = await sendCdpCommand(args.tabId || null, "Runtime.evaluate", {
           expression,
           returnByValue: true,
           awaitPromise: true,
@@ -1204,7 +1236,7 @@ function createMcpServerInstance() {
     if (request.params.name === "browser_handle_dialog") {
       const args = request.params.arguments || {};
       try {
-        await sendCdpCommand(null, "Page.handleJavaScriptDialog", {
+        await sendCdpCommand(args.tabId || null, "Page.handleJavaScriptDialog", {
           accept: args.action === "accept",
           promptText: args.prompt_text || "",
         });
@@ -1227,7 +1259,7 @@ function createMcpServerInstance() {
         //   This is idempotent — safe to call on every invocation.
         if (!logDomainEnabled) {
           try {
-            await sendCdpCommand(null, "Log.enable", {});
+            await sendCdpCommand(args.tabId || null, "Log.enable", {});
             logDomainEnabled = true;
           } catch (e) {
             // Non-fatal — fall through to JS hook below
@@ -1266,7 +1298,7 @@ function createMcpServerInstance() {
           });
           return 'hooked';
         })()`;
-        await sendCdpCommand(null, "Runtime.evaluate", {
+        await sendCdpCommand(args.tabId || null, "Runtime.evaluate", {
           expression: hookExpr,
           returnByValue: true,
         });
@@ -1326,7 +1358,7 @@ function createMcpServerInstance() {
           ${args.clear ? "window.__openclawConsoleLogs = [];" : ""}
           return filtered;
         })()`;
-        const res = await sendCdpCommand(null, "Runtime.evaluate", {
+        const res = await sendCdpCommand(args.tabId || null, "Runtime.evaluate", {
           expression: getExpr,
           returnByValue: true,
         });
@@ -1401,7 +1433,7 @@ function createMcpServerInstance() {
           const r = el.getBoundingClientRect();
           return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
         })()`;
-        const coordRes = await sendCdpCommand(null, "Runtime.evaluate", {
+        const coordRes = await sendCdpCommand(args.tabId || null, "Runtime.evaluate", {
           expression: coordExpr,
           returnByValue: true,
         });
@@ -1416,20 +1448,20 @@ function createMcpServerInstance() {
             ],
           };
         const { x, y } = coordRes.result.value;
-        await sendCdpCommand(null, "Input.dispatchMouseEvent", {
+        await sendCdpCommand(args.tabId || null, "Input.dispatchMouseEvent", {
           type: "mouseMovedToElement",
           x,
           y,
           modifiers: 0,
         });
-        await sendCdpCommand(null, "Input.dispatchMouseEvent", {
+        await sendCdpCommand(args.tabId || null, "Input.dispatchMouseEvent", {
           type: "mouseMoved",
           x,
           y,
           modifiers: 0,
         });
         // Dispatch JS mouseover/mouseenter for apps relying on JS events
-        await sendCdpCommand(null, "Runtime.evaluate", {
+        await sendCdpCommand(args.tabId || null, "Runtime.evaluate", {
           expression: `(() => {
             let el;
             if (${JSON.stringify(args.id)} != null && window.__openclawInteractables) {
@@ -1471,16 +1503,16 @@ function createMcpServerInstance() {
           modifiers: 0,
         };
         if (keyInfo.text) base.text = keyInfo.text;
-        await sendCdpCommand(null, "Input.dispatchKeyEvent", {
+        await sendCdpCommand(args.tabId || null, "Input.dispatchKeyEvent", {
           ...base,
           type: "rawKeyDown",
         });
         if (keyInfo.text)
-          await sendCdpCommand(null, "Input.dispatchKeyEvent", {
+          await sendCdpCommand(args.tabId || null, "Input.dispatchKeyEvent", {
             ...base,
             type: "char",
           });
-        await sendCdpCommand(null, "Input.dispatchKeyEvent", {
+        await sendCdpCommand(args.tabId || null, "Input.dispatchKeyEvent", {
           ...base,
           type: "keyUp",
         });
@@ -1508,7 +1540,7 @@ function createMcpServerInstance() {
             const r = el.getBoundingClientRect();
             return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
           })()`;
-          const res = await sendCdpCommand(null, "Runtime.evaluate", {
+          const res = await sendCdpCommand(args.tabId || null, "Runtime.evaluate", {
             expression: expr,
             returnByValue: true,
           });
@@ -1529,7 +1561,7 @@ function createMcpServerInstance() {
           };
 
         const STEPS = 12;
-        await sendCdpCommand(null, "Input.dispatchMouseEvent", {
+        await sendCdpCommand(args.tabId || null, "Input.dispatchMouseEvent", {
           type: "mousePressed",
           x: from.x,
           y: from.y,
@@ -1541,7 +1573,7 @@ function createMcpServerInstance() {
         for (let i = 1; i <= STEPS; i++) {
           const x = Math.round(from.x + (to.x - from.x) * (i / STEPS));
           const y = Math.round(from.y + (to.y - from.y) * (i / STEPS));
-          await sendCdpCommand(null, "Input.dispatchMouseEvent", {
+          await sendCdpCommand(args.tabId || null, "Input.dispatchMouseEvent", {
             type: "mouseMoved",
             x,
             y,
@@ -1550,7 +1582,7 @@ function createMcpServerInstance() {
             modifiers: 0,
           });
         }
-        await sendCdpCommand(null, "Input.dispatchMouseEvent", {
+        await sendCdpCommand(args.tabId || null, "Input.dispatchMouseEvent", {
           type: "mouseReleased",
           x: to.x,
           y: to.y,
@@ -1586,7 +1618,7 @@ function createMcpServerInstance() {
           };
         const ua = args.custom_ua || cfg.ua;
 
-        await sendCdpCommand(null, "Emulation.setDeviceMetricsOverride", {
+        await sendCdpCommand(args.tabId || null, "Emulation.setDeviceMetricsOverride", {
           width: cfg.width,
           height: cfg.height,
           deviceScaleFactor: cfg.deviceScaleFactor,
@@ -1600,10 +1632,10 @@ function createMcpServerInstance() {
           },
         });
         if (ua)
-          await sendCdpCommand(null, "Emulation.setUserAgentOverride", {
+          await sendCdpCommand(args.tabId || null, "Emulation.setUserAgentOverride", {
             userAgent: ua,
           });
-        await sendCdpCommand(null, "Emulation.setTouchEmulationEnabled", {
+        await sendCdpCommand(args.tabId || null, "Emulation.setTouchEmulationEnabled", {
           enabled: cfg.mobile,
           maxTouchPoints: cfg.mobile ? 5 : 0,
         });
@@ -1661,7 +1693,7 @@ function createMcpServerInstance() {
           } catch(e) {}
           return findings;
         })()`;
-        const res = await sendCdpCommand(null, "Runtime.evaluate", {
+        const res = await sendCdpCommand(args.tabId || null, "Runtime.evaluate", {
           expression,
           returnByValue: true,
         });
@@ -1726,7 +1758,7 @@ function createMcpServerInstance() {
           window.WebSocket.prototype = OrigWS.prototype;
           return { status: 'hooked' };
         })()`;
-        const res = await sendCdpCommand(null, "Runtime.evaluate", {
+        const res = await sendCdpCommand(args.tabId || null, "Runtime.evaluate", {
           expression: hookExpression,
           returnByValue: true,
         });
@@ -1766,7 +1798,7 @@ function createMcpServerInstance() {
           const log = ${args.include_log ? `(window.__openclawWsLog || []).slice(-${limit})` : "[]"};
           return { hooked: !!window.__openclawWsHooked, sockets, log };
         })()`;
-        const res = await sendCdpCommand(null, "Runtime.evaluate", {
+        const res = await sendCdpCommand(args.tabId || null, "Runtime.evaluate", {
           expression,
           returnByValue: true,
         });
@@ -1802,7 +1834,7 @@ function createMcpServerInstance() {
           conn.ws.send(${JSON.stringify(args.message)});
           return { sent: true, id: ${Number(args.id)}, url: conn.url, message: ${JSON.stringify(String(args.message).substring(0, 100))} };
         })()`;
-        const res = await sendCdpCommand(null, "Runtime.evaluate", {
+        const res = await sendCdpCommand(args.tabId || null, "Runtime.evaluate", {
           expression,
           returnByValue: true,
         });
@@ -1863,7 +1895,7 @@ function createMcpServerInstance() {
             return walk(document.body).replace(/\\n\\s*\\n/g, '\\n').trim();
           })()`;
         }
-        const res = await sendCdpCommand(null, "Runtime.evaluate", {
+        const res = await sendCdpCommand(args.tabId || null, "Runtime.evaluate", {
           expression,
           returnByValue: true,
         });
@@ -2083,7 +2115,7 @@ function createMcpServerInstance() {
           document.getElementById('__openclaw_resume__').addEventListener('click', () => { window.__openclawPaused = false; overlay.remove(); });
           return 'overlay_injected';
         })()`;
-        await sendCdpCommand(null, "Runtime.evaluate", {
+        await sendCdpCommand(args.tabId || null, "Runtime.evaluate", {
           expression: injectExpr,
           returnByValue: true,
         });
@@ -2094,7 +2126,7 @@ function createMcpServerInstance() {
         while (Date.now() - startMs < maxMs) {
           await new Promise((r) => setTimeout(r, 1000));
           try {
-            const checkRes = await sendCdpCommand(null, "Runtime.evaluate", {
+            const checkRes = await sendCdpCommand(args.tabId || null, "Runtime.evaluate", {
               expression:
                 "window.__openclawPaused === false ? 'resumed' : 'waiting'",
               returnByValue: true,
@@ -2111,7 +2143,7 @@ function createMcpServerInstance() {
           }
         }
         // Timed out — clean up overlay
-        await sendCdpCommand(null, "Runtime.evaluate", {
+        await sendCdpCommand(args.tabId || null, "Runtime.evaluate", {
           expression:
             "document.getElementById('__openclaw_pause__')?.remove(); window.__openclawPaused = false;",
           returnByValue: true,

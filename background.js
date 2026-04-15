@@ -30,7 +30,11 @@ chrome.alarms.onAlarm.addListener((alarm) => {
   if (state.enabled) {
     // If the SW was killed and just woke up, the command stream will be gone.
     // Re-establish it immediately so MCP calls can resume.
-    if (!state.commandStream && state.attachedTabId && state.endpoint) {
+    if (
+      !state.commandStream &&
+      state.attachedTabIds.length > 0 &&
+      state.endpoint
+    ) {
       console.log("[Alarm] SW woke up — command stream missing, reconnecting…");
       startCommandStream();
     }
@@ -45,7 +49,7 @@ const state = {
   endpoint: DEFAULT_ENDPOINT,
   enabled: false,
   mode: "listen",
-  attachedTabId: null,
+  attachedTabIds: [],
   rules: [],
   ruleSyncInterval: null,
   ruleSyncInFlight: false,
@@ -196,14 +200,18 @@ async function handleIncomingCommand(msg) {
       }
 
       if (msg.method === "Target.closeTarget") {
-        const targetTabId = msg.params?.tabId || state.attachedTabId;
+        const targetTabId =
+          msg.params?.tabId ||
+          (state.attachedTabIds.length > 0 ? state.attachedTabIds[0] : null);
         await chrome.tabs.remove(targetTabId).catch(() => null);
         await sendCdpResult(msg.id, { success: true }, null);
         return;
       }
 
       if (msg.method === "Target.activateTarget") {
-        const targetTabId = msg.params?.tabId || state.attachedTabId;
+        const targetTabId =
+          msg.params?.tabId ||
+          (state.attachedTabIds.length > 0 ? state.attachedTabIds[0] : null);
         const tab = await chrome.tabs.get(targetTabId).catch(() => null);
         if (tab?.windowId) {
           await chrome.windows
@@ -222,7 +230,10 @@ async function handleIncomingCommand(msg) {
       }
     }
 
-    const tabId = msg.params?.tabId || msg.tabId || state.attachedTabId;
+    const tabId =
+      msg.params?.tabId ||
+      msg.tabId ||
+      (state.attachedTabIds.length > 0 ? state.attachedTabIds[0] : null);
     const result = await chrome.debugger.sendCommand(
       { tabId },
       msg.method,
@@ -237,7 +248,8 @@ async function handleIncomingCommand(msg) {
 function startCommandStream() {
   stopCommandStream();
 
-  if (!state.enabled || !state.attachedTabId || !state.endpoint) return;
+  if (!state.enabled || state.attachedTabIds.length === 0 || !state.endpoint)
+    return;
 
   try {
     const es = new EventSource(getCommandStreamUrl());
@@ -349,7 +361,7 @@ async function persistState() {
     webhookUrl: state.endpoint,
     isEnabled: state.enabled,
     mode: state.mode,
-    attachedTabId: state.attachedTabId,
+    attachedTabIds: state.attachedTabIds,
   });
 }
 
@@ -364,17 +376,17 @@ async function detachFromTab(tabId) {
     // Ignore detach failures when the tab/debugger is already gone.
   }
 
-  if (state.attachedTabId === tabId) {
-    state.attachedTabId = null;
+  state.attachedTabIds = state.attachedTabIds.filter((id) => id !== tabId);
+  if (state.attachedTabIds.length === 0) {
+    stopRuleSync();
+    stopCommandStream();
   }
-  stopRuleSync();
-  stopCommandStream();
 }
 
 async function attachToTab(tabId) {
   if (tabId == null) throw new Error("No target tab selected");
-  if (state.attachedTabId != null && state.attachedTabId !== tabId) {
-    await detachFromTab(state.attachedTabId);
+  if (!state.attachedTabIds.includes(tabId)) {
+    // We are no longer detaching from other tabs because we support multiple tabs now.
   }
   // Remove the early return so the interval starts even if tabId matches
 
@@ -404,7 +416,9 @@ async function attachToTab(tabId) {
     ],
   });
 
-  state.attachedTabId = tabId;
+  if (!state.attachedTabIds.includes(tabId)) {
+    state.attachedTabIds.push(tabId);
+  }
   startRuleSync();
   startCommandStream();
   ensureWorkerAlive();
@@ -415,21 +429,30 @@ async function loadSettings() {
     "webhookUrl",
     "isEnabled",
     "mode",
-    "attachedTabId",
+    "attachedTabIds",
   ]);
 
   state.endpoint = normalizeEndpoint(stored.webhookUrl);
   state.enabled = stored.isEnabled === true;
   state.mode = stored.mode === "intercept" ? "intercept" : "listen";
-  state.attachedTabId = Number.isInteger(stored.attachedTabId)
-    ? stored.attachedTabId
-    : null;
+  state.attachedTabIds = Array.isArray(stored.attachedTabIds)
+    ? stored.attachedTabIds
+    : [];
 
-  if (state.enabled && state.attachedTabId != null) {
-    try {
-      await chrome.tabs.get(state.attachedTabId);
-      await attachToTab(state.attachedTabId);
-    } catch {
+  if (state.enabled && state.attachedTabIds.length > 0) {
+    const validTabIds = [];
+    for (const tabId of state.attachedTabIds) {
+      try {
+        await chrome.tabs.get(tabId);
+        await attachToTab(tabId);
+        validTabIds.push(tabId);
+      } catch {
+        // Ignore
+      }
+    }
+    state.attachedTabIds = validTabIds;
+
+    if (state.attachedTabIds.length === 0) {
       try {
         let tabs = await chrome.tabs.query({
           active: true,
@@ -442,11 +465,11 @@ async function loadSettings() {
           await attachToTab(tabs[0].id);
           await persistState();
         } else {
-          state.attachedTabId = null;
+          state.attachedTabIds = [];
           await persistState();
         }
       } catch {
-        state.attachedTabId = null;
+        state.attachedTabIds = [];
         await persistState();
       }
     }
@@ -782,7 +805,7 @@ async function handleResponsePause(tabId, params) {
 }
 
 async function handlePausedRequest(tabId, params) {
-  if (!state.enabled || state.attachedTabId !== tabId) {
+  if (!state.enabled || !state.attachedTabIds.includes(tabId)) {
     await continuePausedRequest(tabId, params);
     return;
   }
@@ -814,15 +837,15 @@ async function handlePausedRequest(tabId, params) {
 
 chrome.runtime.onInstalled.addListener(() => {
   chrome.storage.local
-    .get(["webhookUrl", "isEnabled", "mode", "attachedTabId"])
+    .get(["webhookUrl", "isEnabled", "mode", "attachedTabIds"])
     .then((stored) => {
       chrome.storage.local.set({
         webhookUrl: stored.webhookUrl || DEFAULT_ENDPOINT,
         isEnabled: stored.isEnabled === true,
         mode: stored.mode === "intercept" ? "intercept" : "listen",
-        attachedTabId: Number.isInteger(stored.attachedTabId)
-          ? stored.attachedTabId
-          : null,
+        attachedTabIds: Array.isArray(stored.attachedTabIds)
+          ? stored.attachedTabIds
+          : [],
       });
     });
 });
@@ -847,8 +870,8 @@ async function sendCdpEvent(event, params) {
 }
 
 chrome.debugger.onEvent.addListener(async (source, method, params) => {
-  // If attachedTabId matches, send event over
-  if (state.attachedTabId && source.tabId === state.attachedTabId) {
+  // If attachedTabIds includes the tab, send event over
+  if (source.tabId && state.attachedTabIds.includes(source.tabId)) {
     if (
       method.startsWith("Fetch.") ||
       (method.startsWith("Network.") &&
@@ -876,24 +899,30 @@ chrome.debugger.onEvent.addListener(async (source, method, params) => {
 });
 
 chrome.debugger.onDetach.addListener((source, reason) => {
-  if (source.tabId === state.attachedTabId) {
-    stopRuleSync();
-    stopCommandStream();
-    if (reason !== "target_closed") {
-      state.attachedTabId = null;
+  if (source.tabId && state.attachedTabIds.includes(source.tabId)) {
+    state.attachedTabIds = state.attachedTabIds.filter(
+      (id) => id !== source.tabId,
+    );
+    if (state.attachedTabIds.length === 0) {
+      stopRuleSync();
+      stopCommandStream();
       if (keepAliveInterval) clearInterval(keepAliveInterval);
+    }
+    if (reason !== "target_closed") {
       persistState();
     }
   }
 });
 
 chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
-  if (tabId === state.attachedTabId) {
-    stopRuleSync();
-    stopCommandStream();
-    if (!removeInfo.isWindowClosing) {
-      state.attachedTabId = null;
+  if (state.attachedTabIds.includes(tabId)) {
+    state.attachedTabIds = state.attachedTabIds.filter((id) => id !== tabId);
+    if (state.attachedTabIds.length === 0) {
+      stopRuleSync();
+      stopCommandStream();
       if (keepAliveInterval) clearInterval(keepAliveInterval);
+    }
+    if (!removeInfo.isWindowClosing) {
       persistState();
     }
   }
@@ -901,13 +930,19 @@ chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type === "GET_STATUS") {
-    getTabLabel(state.attachedTabId).then((tabLabel) => {
+    const primaryTabId =
+      state.attachedTabIds.length > 0 ? state.attachedTabIds[0] : null;
+    getTabLabel(primaryTabId).then((tabLabel) => {
       sendResponse({
         enabled: state.enabled,
         mode: state.mode,
         endpoint: state.endpoint,
-        attachedTabId: state.attachedTabId,
-        attachedTabLabel: tabLabel,
+        attachedTabId: primaryTabId,
+        attachedTabIds: state.attachedTabIds,
+        attachedTabLabel:
+          state.attachedTabIds.length > 1
+            ? `${state.attachedTabIds.length} tabs attached`
+            : tabLabel,
       });
     });
 
@@ -970,21 +1005,29 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         // startCommandStream() (called at the tail of attachToTab) passes its
         // guard check.  We roll it back below if attachToTab throws.
         state.enabled = true;
-        await attachToTab(tabId);
+        if (tabId != null) {
+          await attachToTab(tabId);
+        }
       } else {
-        await detachFromTab(state.attachedTabId);
-        state.enabled = false;
+        if (tabId != null) {
+          await detachFromTab(tabId);
+        }
+        if (state.attachedTabIds.length === 0) {
+          state.enabled = false;
+        }
       }
 
       await persistState();
       sendResponse({
         ok: true,
         enabled: state.enabled,
-        attachedTabId: state.attachedTabId,
+        attachedTabId: tabId,
+        attachedTabIds: state.attachedTabIds,
       });
     })().catch(async (error) => {
-      state.enabled = false;
-      state.attachedTabId = null;
+      if (state.attachedTabIds.length === 0) {
+        state.enabled = false;
+      }
       await persistState();
       sendResponse({ ok: false, error: error?.message || String(error) });
     });
