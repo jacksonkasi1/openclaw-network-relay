@@ -430,9 +430,25 @@ async function loadSettings() {
       await chrome.tabs.get(state.attachedTabId);
       await attachToTab(state.attachedTabId);
     } catch {
-      state.enabled = false;
-      state.attachedTabId = null;
-      await persistState();
+      try {
+        let tabs = await chrome.tabs.query({
+          active: true,
+          lastFocusedWindow: true,
+        });
+        if (tabs.length === 0) {
+          tabs = await chrome.tabs.query({ active: true });
+        }
+        if (tabs.length > 0) {
+          await attachToTab(tabs[0].id);
+          await persistState();
+        } else {
+          state.attachedTabId = null;
+          await persistState();
+        }
+      } catch {
+        state.attachedTabId = null;
+        await persistState();
+      }
     }
   }
 }
@@ -859,24 +875,27 @@ chrome.debugger.onEvent.addListener(async (source, method, params) => {
   });
 });
 
-chrome.debugger.onDetach.addListener((source) => {
+chrome.debugger.onDetach.addListener((source, reason) => {
   if (source.tabId === state.attachedTabId) {
     stopRuleSync();
     stopCommandStream();
-    state.enabled = false;
-    state.attachedTabId = null;
-    if (keepAliveInterval) clearInterval(keepAliveInterval);
-    persistState();
+    if (reason !== "target_closed") {
+      state.attachedTabId = null;
+      if (keepAliveInterval) clearInterval(keepAliveInterval);
+      persistState();
+    }
   }
 });
 
-chrome.tabs.onRemoved.addListener((tabId) => {
+chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
   if (tabId === state.attachedTabId) {
     stopRuleSync();
     stopCommandStream();
-    state.enabled = false;
-    state.attachedTabId = null;
-    persistState();
+    if (!removeInfo.isWindowClosing) {
+      state.attachedTabId = null;
+      if (keepAliveInterval) clearInterval(keepAliveInterval);
+      persistState();
+    }
   }
 });
 
