@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "GPT Auto Accept MCP",
+  "version": "1.0",
+  "description": "Automatically clicks the confirm action button for tools/MCP in ChatGPT.",
+  "content_scripts": [
+    {
+      "matches": ["*://chatgpt.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
