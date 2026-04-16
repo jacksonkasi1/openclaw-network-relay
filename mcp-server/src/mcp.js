@@ -244,7 +244,7 @@ function buildDecision(args) {
   };
 }
 
-function createMcpServerInstance() {
+export function createMcpServerInstance() {
   const server = new Server(
     { name: "openclaw-burpsuite-agent", version: "3.0.0" },
     { capabilities: { tools: {} } },

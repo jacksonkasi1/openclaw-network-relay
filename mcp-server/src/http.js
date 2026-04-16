@@ -3,6 +3,7 @@ import cors from "cors";
 import { startTunnel } from "untun";
 import path from "path";
 import { fileURLToPath } from "url";
+import { createGptRouter } from "./gpt.js";
 import {
   createPendingIntercept,
   dropPendingIntercept,
@@ -42,6 +43,21 @@ export function createHttpApp() {
   app.use(cors()); // Allow tunnel domains
   app.use(express.json({ limit: "50mb" }));
   app.use(express.static(publicPath)); // Serve the web dashboard
+
+  // ── GPT Bridge ─────────────────────────────────────────────────────────────
+  // REST endpoints that let a ChatGPT Custom GPT call MCP tools via Actions.
+  // Schema is served at /api/gpt/openapi.json (public, no auth).
+  // Tool calls require Bearer token matching GPT_API_KEY env var.
+  app.use("/api/gpt", createGptRouter());
+  if (process.env.GPT_API_KEY) {
+    console.error(
+      "[GPT] Custom GPT bridge enabled. Schema: /api/gpt/openapi.json",
+    );
+  } else {
+    console.error(
+      "[GPT] Custom GPT bridge inactive (set GPT_API_KEY in .env to enable).",
+    );
+  }
 
   // SSE Remote AI Settings
   app.get("/api/settings", (_req, res) => {
