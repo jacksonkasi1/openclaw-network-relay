@@ -28,6 +28,20 @@ let lastDomSnapshot = null; // for browser_dom_diff
 const logBuffer = []; // for browser_get_console_logs (CDP Log.entryAdded events)
 let logDomainEnabled = false;
 
+// ─── Output size guard ────────────────────────────────────────────────────────
+// Keep individual tool responses below this threshold so the AI context window
+// doesn't get bloated by a single noisy call (logs, traffic history, DOM, …).
+const MAX_TOOL_OUTPUT = 24_000; // chars
+function trimOutput(text) {
+  if (!text || text.length <= MAX_TOOL_OUTPUT) return text;
+  const kept = MAX_TOOL_OUTPUT - 120;
+  return (
+    text.substring(0, kept) +
+    `\n\n… [OUTPUT TRUNCATED — total ${text.length} chars, showing first ${kept}. ` +
+    `Use filters/limit/light_mode/clear to narrow results.]`
+  );
+}
+
 const NOISE_DOMAINS = [
   "google-analytics.com",
   "googletagmanager.com",
@@ -478,9 +492,13 @@ function createMcpServerInstance() {
     if (request.params.name === "browser_new_tab") {
       const args = request.params.arguments || {};
       try {
-        const res = await sendCdpCommand(args.tabId || null, "Target.createTarget", {
-          url: args.url,
-        });
+        const res = await sendCdpCommand(
+          args.tabId || null,
+          "Target.createTarget",
+          {
+            url: args.url,
+          },
+        );
         return {
           content: [
             {
@@ -528,7 +546,11 @@ function createMcpServerInstance() {
 
     if (request.params.name === "browser_list_tabs") {
       try {
-        const res = await sendCdpCommand(args.tabId || null, "Target.getTabs", {});
+        const res = await sendCdpCommand(
+          args.tabId || null,
+          "Target.getTabs",
+          {},
+        );
         const tabs = res.tabs.map((t) => ({
           id: t.id,
           windowId: t.windowId,
@@ -809,10 +831,14 @@ function createMcpServerInstance() {
             return { ok: true };
           })();
         `;
-        const res = await sendCdpCommand(args.tabId || null, "Runtime.evaluate", {
-          expression,
-          returnByValue: true,
-        });
+        const res = await sendCdpCommand(
+          args.tabId || null,
+          "Runtime.evaluate",
+          {
+            expression,
+            returnByValue: true,
+          },
+        );
         if (res.result?.value?.error)
           return {
             isError: true,
@@ -834,7 +860,11 @@ function createMcpServerInstance() {
 
     if (request.params.name === "browser_get_cookies") {
       try {
-        const res = await sendCdpCommand(args.tabId || null, "Network.getCookies", {});
+        const res = await sendCdpCommand(
+          args.tabId || null,
+          "Network.getCookies",
+          {},
+        );
         return {
           content: [
             { type: "text", text: JSON.stringify(res.cookies || [], null, 2) },
@@ -887,10 +917,14 @@ function createMcpServerInstance() {
             return { ok: true };
           })();
         `;
-        const res = await sendCdpCommand(args.tabId || null, "Runtime.evaluate", {
-          expression,
-          returnByValue: true,
-        });
+        const res = await sendCdpCommand(
+          args.tabId || null,
+          "Runtime.evaluate",
+          {
+            expression,
+            returnByValue: true,
+          },
+        );
         if (res.result?.value?.error)
           return {
             isError: true,
@@ -905,7 +939,16 @@ function createMcpServerInstance() {
     }
 
     if (request.params.name === "get_pending_requests") {
-      const pending = listPendingIntercepts().map(serializeIntercept);
+      const pending = listPendingIntercepts().map((p) => {
+        const s = serializeIntercept(p);
+        // Trim large bodies so the list doesn't explode the context window.
+        // Use resolve_request with the specific id to see/modify full payloads.
+        if (s.requestBody && s.requestBody.length > 800)
+          s.requestBody = `[${s.requestBody.length} chars — see resolve_request]`;
+        if (s.responseBody && s.responseBody.length > 800)
+          s.responseBody = `[${s.responseBody.length} chars — see resolve_request]`;
+        return s;
+      });
       if (pending.length === 0) {
         return {
           content: [
@@ -914,13 +957,19 @@ function createMcpServerInstance() {
         };
       }
       return {
-        content: [{ type: "text", text: JSON.stringify(pending, null, 2) }],
+        content: [
+          { type: "text", text: trimOutput(JSON.stringify(pending, null, 2)) },
+        ],
       };
     }
 
     if (request.params.name === "get_traffic_history") {
       const args = request.params.arguments || {};
-      const limit = args.limit ? Math.max(1, Math.min(args.limit, 100)) : 50;
+      // Default limit lowered to 20 to avoid flooding context; caller may raise up to 100.
+      const limit = args.limit ? Math.max(1, Math.min(args.limit, 100)) : 20;
+      // light_mode defaults to TRUE — strips bodies to prevent context bloat.
+      // Pass light_mode:false explicitly only when you need the full payload.
+      const lightMode = args.light_mode !== false;
 
       // Fetch more initially so we can filter properly before limiting
       let history = getTrafficLogs(1000).map(serializeIntercept);
@@ -949,14 +998,16 @@ function createMcpServerInstance() {
               !NOISE_DOMAINS.some((domain) => h.url && h.url.includes(domain)),
           );
         }
-        if (args.light_mode) {
+        if (lightMode) {
           history = history.map((h) => ({
             ...h,
+            requestHeaders: undefined,
+            responseHeaders: undefined,
             requestBody: h.requestBody
-              ? `[Omitted in light_mode - Size: ${h.requestBody.length} chars]`
+              ? `[body omitted — ${h.requestBody.length} chars. Use get_traffic_detail or light_mode:false]`
               : null,
             responseBody: h.responseBody
-              ? `[Omitted in light_mode - Size: ${h.responseBody.length} chars]`
+              ? `[body omitted — ${h.responseBody.length} chars. Use get_traffic_detail or light_mode:false]`
               : null,
           }));
         }
@@ -976,7 +1027,9 @@ function createMcpServerInstance() {
         };
       }
       return {
-        content: [{ type: "text", text: JSON.stringify(history, null, 2) }],
+        content: [
+          { type: "text", text: trimOutput(JSON.stringify(history, null, 2)) },
+        ],
       };
     }
 
@@ -1079,9 +1132,11 @@ function createMcpServerInstance() {
           responseText = `[Binary Data Omitted - Content-Type: ${contentType}]`;
         } else {
           responseText = await response.text();
-          // Truncate massively large text files
-          if (responseText.length > 50000) {
-            responseText = responseText.substring(0, 50000) + "... [Truncated]";
+          // Truncate large responses to avoid flooding the AI context window
+          if (responseText.length > 15000) {
+            responseText =
+              responseText.substring(0, 15000) +
+              `... [Truncated — full response was ${responseText.length} chars]`;
           }
         }
 
@@ -1103,7 +1158,9 @@ function createMcpServerInstance() {
         };
 
         return {
-          content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+          content: [
+            { type: "text", text: trimOutput(JSON.stringify(result, null, 2)) },
+          ],
         };
       } catch (err) {
         return {
@@ -1204,11 +1261,15 @@ function createMcpServerInstance() {
             setTimeout(() => resolve('network_idle timeout'), ${timeoutMs});
           })`;
         }
-        const res = await sendCdpCommand(args.tabId || null, "Runtime.evaluate", {
-          expression,
-          returnByValue: true,
-          awaitPromise: true,
-        });
+        const res = await sendCdpCommand(
+          args.tabId || null,
+          "Runtime.evaluate",
+          {
+            expression,
+            returnByValue: true,
+            awaitPromise: true,
+          },
+        );
         if (res.exceptionDetails)
           return {
             isError: true,
@@ -1236,10 +1297,14 @@ function createMcpServerInstance() {
     if (request.params.name === "browser_handle_dialog") {
       const args = request.params.arguments || {};
       try {
-        await sendCdpCommand(args.tabId || null, "Page.handleJavaScriptDialog", {
-          accept: args.action === "accept",
-          promptText: args.prompt_text || "",
-        });
+        await sendCdpCommand(
+          args.tabId || null,
+          "Page.handleJavaScriptDialog",
+          {
+            accept: args.action === "accept",
+            promptText: args.prompt_text || "",
+          },
+        );
         return {
           content: [
             { type: "text", text: `Dialog ${args.action}ed successfully.` },
@@ -1252,7 +1317,7 @@ function createMcpServerInstance() {
 
     if (request.params.name === "browser_get_console_logs") {
       const args = request.params.arguments || {};
-      const limit = args.limit || 200;
+      const limit = args.limit || 50;
       try {
         // ── Step 1: Enable CDP Log domain (captures EVERYTHING DevTools shows:
         //   CSP violations, runtime errors, extension errors, console.* calls).
@@ -1347,7 +1412,7 @@ function createMcpServerInstance() {
           );
         }
 
-        // Get JS hook logs from page
+        // Get JS hook logs from page (msg capped at 500 chars to prevent context bloat)
         const getExpr = `(() => {
           const logs = window.__openclawConsoleLogs || [];
           const filtered = ${
@@ -1356,12 +1421,16 @@ function createMcpServerInstance() {
               : "logs"
           };
           ${args.clear ? "window.__openclawConsoleLogs = [];" : ""}
-          return filtered;
+          return filtered.map(l => ({ ...l, msg: l.msg ? l.msg.substring(0, 500) : l.msg }));
         })()`;
-        const res = await sendCdpCommand(args.tabId || null, "Runtime.evaluate", {
-          expression: getExpr,
-          returnByValue: true,
-        });
+        const res = await sendCdpCommand(
+          args.tabId || null,
+          "Runtime.evaluate",
+          {
+            expression: getExpr,
+            returnByValue: true,
+          },
+        );
         if (res.exceptionDetails)
           return {
             isError: true,
@@ -1405,11 +1474,21 @@ function createMcpServerInstance() {
           };
 
         const summary = `${merged.length} messages (${nativeOnlyLogs.length} browser-level via CDP, ${jsLogs.length} via JS hook):`;
+        // Compact one-line-per-entry format — much lighter than JSON.stringify(…, null, 2)
+        const lines = merged
+          .map((l) => {
+            const level = (l.level || "log").toUpperCase().padEnd(7);
+            const src = (l.source || "?").padEnd(12);
+            const msg = (l.msg || l.text || "").substring(0, 300);
+            const loc = l.url ? ` — ${l.url}${l.line ? ":" + l.line : ""}` : "";
+            return `[${level}][${src}] ${msg}${loc}`;
+          })
+          .join("\n");
         return {
           content: [
             {
               type: "text",
-              text: summary + "\n" + JSON.stringify(merged, null, 2),
+              text: trimOutput(summary + "\n" + lines),
             },
           ],
         };
@@ -1433,10 +1512,14 @@ function createMcpServerInstance() {
           const r = el.getBoundingClientRect();
           return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
         })()`;
-        const coordRes = await sendCdpCommand(args.tabId || null, "Runtime.evaluate", {
-          expression: coordExpr,
-          returnByValue: true,
-        });
+        const coordRes = await sendCdpCommand(
+          args.tabId || null,
+          "Runtime.evaluate",
+          {
+            expression: coordExpr,
+            returnByValue: true,
+          },
+        );
         if (!coordRes.result?.value)
           return {
             isError: true,
@@ -1540,10 +1623,14 @@ function createMcpServerInstance() {
             const r = el.getBoundingClientRect();
             return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
           })()`;
-          const res = await sendCdpCommand(args.tabId || null, "Runtime.evaluate", {
-            expression: expr,
-            returnByValue: true,
-          });
+          const res = await sendCdpCommand(
+            args.tabId || null,
+            "Runtime.evaluate",
+            {
+              expression: expr,
+              returnByValue: true,
+            },
+          );
           return res.result?.value || null;
         };
 
@@ -1618,27 +1705,39 @@ function createMcpServerInstance() {
           };
         const ua = args.custom_ua || cfg.ua;
 
-        await sendCdpCommand(args.tabId || null, "Emulation.setDeviceMetricsOverride", {
-          width: cfg.width,
-          height: cfg.height,
-          deviceScaleFactor: cfg.deviceScaleFactor,
-          mobile: cfg.mobile,
-          screenWidth: cfg.width,
-          screenHeight: cfg.height,
-          screenOrientation: {
-            type:
-              cfg.height > cfg.width ? "portraitPrimary" : "landscapePrimary",
-            angle: cfg.height > cfg.width ? 0 : 90,
+        await sendCdpCommand(
+          args.tabId || null,
+          "Emulation.setDeviceMetricsOverride",
+          {
+            width: cfg.width,
+            height: cfg.height,
+            deviceScaleFactor: cfg.deviceScaleFactor,
+            mobile: cfg.mobile,
+            screenWidth: cfg.width,
+            screenHeight: cfg.height,
+            screenOrientation: {
+              type:
+                cfg.height > cfg.width ? "portraitPrimary" : "landscapePrimary",
+              angle: cfg.height > cfg.width ? 0 : 90,
+            },
           },
-        });
+        );
         if (ua)
-          await sendCdpCommand(args.tabId || null, "Emulation.setUserAgentOverride", {
-            userAgent: ua,
-          });
-        await sendCdpCommand(args.tabId || null, "Emulation.setTouchEmulationEnabled", {
-          enabled: cfg.mobile,
-          maxTouchPoints: cfg.mobile ? 5 : 0,
-        });
+          await sendCdpCommand(
+            args.tabId || null,
+            "Emulation.setUserAgentOverride",
+            {
+              userAgent: ua,
+            },
+          );
+        await sendCdpCommand(
+          args.tabId || null,
+          "Emulation.setTouchEmulationEnabled",
+          {
+            enabled: cfg.mobile,
+            maxTouchPoints: cfg.mobile ? 5 : 0,
+          },
+        );
 
         const label = args.preset || `custom ${cfg.width}x${cfg.height}`;
         return {
@@ -1693,10 +1792,14 @@ function createMcpServerInstance() {
           } catch(e) {}
           return findings;
         })()`;
-        const res = await sendCdpCommand(args.tabId || null, "Runtime.evaluate", {
-          expression,
-          returnByValue: true,
-        });
+        const res = await sendCdpCommand(
+          args.tabId || null,
+          "Runtime.evaluate",
+          {
+            expression,
+            returnByValue: true,
+          },
+        );
         if (res.exceptionDetails)
           return {
             isError: true,
@@ -1758,10 +1861,14 @@ function createMcpServerInstance() {
           window.WebSocket.prototype = OrigWS.prototype;
           return { status: 'hooked' };
         })()`;
-        const res = await sendCdpCommand(args.tabId || null, "Runtime.evaluate", {
-          expression: hookExpression,
-          returnByValue: true,
-        });
+        const res = await sendCdpCommand(
+          args.tabId || null,
+          "Runtime.evaluate",
+          {
+            expression: hookExpression,
+            returnByValue: true,
+          },
+        );
         if (res.exceptionDetails)
           return {
             isError: true,
@@ -1798,10 +1905,14 @@ function createMcpServerInstance() {
           const log = ${args.include_log ? `(window.__openclawWsLog || []).slice(-${limit})` : "[]"};
           return { hooked: !!window.__openclawWsHooked, sockets, log };
         })()`;
-        const res = await sendCdpCommand(args.tabId || null, "Runtime.evaluate", {
-          expression,
-          returnByValue: true,
-        });
+        const res = await sendCdpCommand(
+          args.tabId || null,
+          "Runtime.evaluate",
+          {
+            expression,
+            returnByValue: true,
+          },
+        );
         if (res.exceptionDetails)
           return {
             isError: true,
@@ -1834,10 +1945,14 @@ function createMcpServerInstance() {
           conn.ws.send(${JSON.stringify(args.message)});
           return { sent: true, id: ${Number(args.id)}, url: conn.url, message: ${JSON.stringify(String(args.message).substring(0, 100))} };
         })()`;
-        const res = await sendCdpCommand(args.tabId || null, "Runtime.evaluate", {
-          expression,
-          returnByValue: true,
-        });
+        const res = await sendCdpCommand(
+          args.tabId || null,
+          "Runtime.evaluate",
+          {
+            expression,
+            returnByValue: true,
+          },
+        );
         if (res.exceptionDetails)
           return {
             isError: true,
@@ -1895,10 +2010,14 @@ function createMcpServerInstance() {
             return walk(document.body).replace(/\\n\\s*\\n/g, '\\n').trim();
           })()`;
         }
-        const res = await sendCdpCommand(args.tabId || null, "Runtime.evaluate", {
-          expression,
-          returnByValue: true,
-        });
+        const res = await sendCdpCommand(
+          args.tabId || null,
+          "Runtime.evaluate",
+          {
+            expression,
+            returnByValue: true,
+          },
+        );
         if (res.exceptionDetails)
           return {
             isError: true,
@@ -2126,11 +2245,15 @@ function createMcpServerInstance() {
         while (Date.now() - startMs < maxMs) {
           await new Promise((r) => setTimeout(r, 1000));
           try {
-            const checkRes = await sendCdpCommand(args.tabId || null, "Runtime.evaluate", {
-              expression:
-                "window.__openclawPaused === false ? 'resumed' : 'waiting'",
-              returnByValue: true,
-            });
+            const checkRes = await sendCdpCommand(
+              args.tabId || null,
+              "Runtime.evaluate",
+              {
+                expression:
+                  "window.__openclawPaused === false ? 'resumed' : 'waiting'",
+                returnByValue: true,
+              },
+            );
             if (checkRes.result?.value === "resumed") {
               return {
                 content: [
