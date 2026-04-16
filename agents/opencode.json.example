@@ -4,18 +4,18 @@
   "mcp": {
     "openclaw-interceptor": {
       "type": "local",
-      "command": ["bun", "run", "./mcp-server/src/index.js"],
+      "command": ["bun", "run", "../mcp-server/src/index.js"],
       "enabled": true
     },
     "h1-brain": {
       "type": "local",
       "command": [
-        "./3r-party-mcp-servers/h1-brain/venv/bin/python",
-        "./3r-party-mcp-servers/h1-brain/server.py"
+        "../3r-party-mcp-servers/h1-brain/venv/bin/python",
+        "../3r-party-mcp-servers/h1-brain/server.py"
       ],
       "environment": {
-        "H1_API_TOKEN": "xxxxxx",
-        "H1_USERNAME": "<USERNAME>"
+        "H1_API_TOKEN": "<YOUR_H1_API_TOKEN>",
+        "H1_USERNAME": "<YOUR_H1_USERNAME>"
       },
       "enabled": true
     },
@@ -23,11 +23,11 @@
       "type": "local",
       "command": [
         "node",
-        "./3r-party-mcp-servers/hackerone-mcp-server/dist/index.js"
+        "../3r-party-mcp-servers/hackerone-mcp-server/dist/index.js"
       ],
       "environment": {
-        "H1_API_TOKEN": "xxxxxx",
-        "H1_USERNAME": "<USERNAME>"
+        "H1_API_TOKEN": "<YOUR_H1_API_TOKEN>",
+        "H1_USERNAME": "<YOUR_H1_USERNAME>"
       },
       "enabled": true
     }

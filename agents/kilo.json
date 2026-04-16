@@ -14,17 +14,9 @@
   "mcp": {
     "openclaw-interceptor": {
       "type": "local",
-      "command": ["bun", "run", "./mcp-server/src/index.js"],
+      "command": ["bun", "run", "../mcp-server/src/index.js"],
       "enabled": true,
       "timeout": 30000
-    },
-    "chrome-devtools": {
-      "type": "local",
-      "command": ["npx", "-y", "chrome-devtools-mcp@latest"],
-      "environment": {
-        "CHROME_PATH": "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
-        "PUPPETEER_EXECUTABLE_PATH": "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser"
-      }
     }
   },
   "instructions": ["AGENTS.md"]
