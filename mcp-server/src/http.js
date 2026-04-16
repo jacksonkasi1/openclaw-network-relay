@@ -1,6 +1,6 @@
 import express from "express";
 import cors from "cors";
-import { startTunnel } from "untun";
+import { startCloudflaredTunnel } from "./tunnel.js";
 import path from "path";
 import { fileURLToPath } from "url";
 import { createGptRouter } from "./gpt.js";
@@ -69,8 +69,12 @@ export function createHttpApp() {
 
     if (global.sseEnabled && !global.publicUrl) {
       try {
-        console.error("[HTTP] Starting Cloudflare tunnel...");
-        global.tunnel = await startTunnel({ port: 31337 });
+        const port =
+          global.serverPort || parseInt(process.env.PORT || "31337", 10);
+        console.error(
+          `[HTTP] Starting Cloudflare tunnel → http://localhost:${port}`,
+        );
+        global.tunnel = await startCloudflaredTunnel(port);
         if (global.tunnel) {
           global.publicUrl = await global.tunnel.getURL();
           console.error(`[HTTP] Tunnel active: ${global.publicUrl}`);

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { createHttpApp } from "./http.js";
 import { startMcpServer } from "./mcp.js";
-import { startTunnel } from "untun";
+import { startCloudflaredTunnel } from "./tunnel.js";
 
 let PORT = parseInt(process.env.PORT || "31337", 10);
 
@@ -25,7 +25,7 @@ async function maybeStartAutoTunnel(port) {
   try {
     console.error("[GPT] GPT_AUTO_TUNNEL=true — starting Cloudflare tunnel...");
     global.sseEnabled = true;
-    global.tunnel = await startTunnel({ port });
+    global.tunnel = await startCloudflaredTunnel(port);
     if (global.tunnel) {
       global.publicUrl = await global.tunnel.getURL();
       console.error(`[GPT] Tunnel active: ${global.publicUrl}`);
@@ -40,6 +40,9 @@ async function maybeStartAutoTunnel(port) {
 
 function startServer(port) {
   const server = app.listen(port, () => {
+    // Store the actual port globally so tunnel.js and http.js always
+    // target the correct port even when 31337 was already in use.
+    global.serverPort = port;
     console.error(
       `[HTTP] OpenClaw Dashboard listening on http://localhost:${port}`,
     );
