@@ -1,6 +1,6 @@
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
@@ -2298,31 +2298,58 @@ export function startMcpServer(app) {
     console.error("[MCP] STDIO bridge ready (Local AI)");
   });
 
-  // 2. SSE Transport (For Remote AI on VM)
-  let sseServer = null;
-  let sseTransport = null;
+  // 2. Streamable HTTP Transport (For Remote AI — ChatGPT native MCP)
+  //
+  // ChatGPT's native MCP connector uses the 2025-03-26 Streamable HTTP
+  // protocol, not the old deprecated SSE handshake.  In the new protocol
+  // the client POSTs JSON-RPC directly to the MCP endpoint (/sse) and
+  // the server replies either inline (for quick calls) or as an SSE stream
+  // (for long-running / streaming responses).  GET /sse is also accepted
+  // for server-initiated notification streams.
+  //
+  // We run in *stateless* mode (sessionIdGenerator: undefined) so every
+  // POST gets a fresh server instance.  This avoids session-affinity
+  // problems behind Cloudflare and is sufficient for ChatGPT's use-case.
 
-  app.get("/sse", async (req, res) => {
+  app.all("/sse", async (req, res) => {
     if (!global.sseEnabled) {
       res.status(403).json({
         error: "Remote AI access (SSE) is disabled in the dashboard.",
       });
       return;
     }
-    console.error("[MCP] New SSE connection established (Remote AI)");
-    sseServer = createMcpServerInstance();
-    sseTransport = new SSEServerTransport("/message", res);
-    await sseServer.connect(sseTransport);
-  });
 
-  app.post("/message", async (req, res) => {
-    if (!global.sseEnabled || !sseTransport) {
-      res.status(403).json({
-        error: "Remote AI access (SSE) is disabled or not connected.",
-      });
-      return;
+    // Prevent Cloudflare / nginx from buffering the SSE response stream.
+    res.setHeader("X-Accel-Buffering", "no");
+    res.setHeader("Cache-Control", "no-cache, no-transform");
+
+    console.error(`[MCP] Streamable HTTP request: ${req.method} /sse`);
+
+    const transport = new StreamableHTTPServerTransport({
+      sessionIdGenerator: undefined, // stateless — no session affinity needed
+    });
+
+    const server = createMcpServerInstance();
+
+    // Clean up when the client disconnects.
+    const cleanup = () => {
+      transport.close().catch(() => {});
+      server.close().catch(() => {});
+    };
+    res.on("close", cleanup);
+    res.on("error", cleanup);
+
+    try {
+      await server.connect(transport);
+      // Pass the already-parsed body so the SDK doesn't try to re-read the
+      // request stream (Express's json() middleware has already consumed it).
+      await transport.handleRequest(req, res, req.body);
+    } catch (err) {
+      console.error("[MCP] Streamable HTTP error:", err.message);
+      if (!res.headersSent) {
+        res.status(500).json({ error: "Internal MCP server error" });
+      }
     }
-    await sseTransport.handlePostMessage(req, res);
   });
 }
 
