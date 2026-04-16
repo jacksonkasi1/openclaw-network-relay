@@ -1,5 +1,57 @@
 export const MCP_TOOLS = [
   {
+    name: "system_execute_command",
+    description:
+      "Execute a shell command on the local machine (Bash/Zsh, Python, Node).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        command: {
+          type: "string",
+          description: "The shell command to execute.",
+        },
+        timeout_ms: {
+          type: "integer",
+          description:
+            "Maximum execution time in milliseconds (default 30000).",
+        },
+      },
+      required: ["command"],
+    },
+  },
+  {
+    name: "system_read_file",
+    description: "Read the contents of a local file.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        path: {
+          type: "string",
+          description: "The path of the file to read.",
+        },
+      },
+      required: ["path"],
+    },
+  },
+  {
+    name: "system_write_file",
+    description: "Create or overwrite a local file with the provided content.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        path: {
+          type: "string",
+          description: "The path of the file to write.",
+        },
+        content: {
+          type: "string",
+          description: "The content to write to the file.",
+        },
+      },
+      required: ["path", "content"],
+    },
+  },
+  {
     name: "browser_new_tab",
     description: "Open a new background tab in the attached browser.",
     inputSchema: {

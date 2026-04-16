@@ -22,11 +22,69 @@ import {
 } from "./db.js";
 import { sendCdpCommand, cdpEvents } from "./cdp.js";
 import { MCP_TOOLS } from "./tools.js";
+import {
+  writeFileSync,
+  readFileSync,
+  mkdirSync,
+  existsSync,
+  readdirSync,
+  unlinkSync,
+} from "fs";
+import { join, dirname } from "path";
+import { fileURLToPath } from "url";
+import { randomUUID as _randomUUID } from "crypto";
+import { exec } from "child_process";
 
 // ─── Module-level state for new tools ────────────────────────────────────────
 let lastDomSnapshot = null; // for browser_dom_diff
 const logBuffer = []; // for browser_get_console_logs (CDP Log.entryAdded events)
 let logDomainEnabled = false;
+
+// ─── Screenshot serving ───────────────────────────────────────────────────────
+// Screenshots are saved as PNG files under public/screenshots/ so they can be
+// accessed via a stable HTTP URL.  This is needed because ChatGPT's MCP client
+// does not render inline base64 image content blocks — it needs a URL instead.
+// Local MCP clients (Zed, Claude Desktop, etc.) still receive the inline base64
+// image block, so they continue to display screenshots natively.
+const _mcpDir = dirname(fileURLToPath(import.meta.url));
+const screenshotsDir = join(_mcpDir, "../public/screenshots");
+
+/**
+ * Writes a base64-encoded PNG to public/screenshots/<timestamp>-<uuid>.png and
+ * returns the public URL for that file.
+ *
+ * @param {string} base64Data  Raw base64 string from CDP Page.captureScreenshot
+ * @returns {{ filename: string, url: string }}
+ */
+function saveScreenshot(base64Data) {
+  if (!existsSync(screenshotsDir)) {
+    mkdirSync(screenshotsDir, { recursive: true });
+  }
+  const filename = `${Date.now()}-${_randomUUID().slice(0, 8)}.png`;
+  const filePath = join(screenshotsDir, filename);
+  writeFileSync(filePath, Buffer.from(base64Data, "base64"));
+
+  // Keep disk clean by storing only the last 10 screenshots
+  try {
+    const files = readdirSync(screenshotsDir)
+      .filter((f) => f.endsWith(".png"))
+      .sort()
+      .reverse();
+
+    for (const f of files.slice(10)) {
+      unlinkSync(join(screenshotsDir, f));
+    }
+  } catch (cleanupErr) {
+    console.error("[Screenshot] Cleanup failed:", cleanupErr.message);
+  }
+
+  const port = global.serverPort || parseInt(process.env.PORT || "31337", 10);
+  const baseUrl = (global.publicUrl || `http://localhost:${port}`).replace(
+    /\/$/,
+    "",
+  );
+  return { filename, url: `${baseUrl}/screenshots/${filename}` };
+}
 
 // ─── Output size guard ────────────────────────────────────────────────────────
 // Keep individual tool responses below this threshold so the AI context window
@@ -252,11 +310,63 @@ export function createMcpServerInstance() {
 
   server.setRequestHandler(ListToolsRequestSchema, async () => {
     return {
-      tools: MCP_TOOLS,
+      tools: MCP_TOOLS.map((t) => ({
+        ...t,
+        "x-openai-isConsequential": false,
+      })),
     };
   });
 
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
+    if (request.params.name === "system_execute_command") {
+      const args = request.params.arguments || {};
+      try {
+        const timeout_ms = args.timeout_ms || 30000;
+        const result = await new Promise((resolvePromise) => {
+          exec(
+            args.command,
+            { timeout: timeout_ms, maxBuffer: 1024 * 1024 * 5 },
+            (error, stdout, stderr) => {
+              let output = "";
+              if (stdout) output += `STDOUT:\n${stdout}\n`;
+              if (stderr) output += `STDERR:\n${stderr}\n`;
+              if (error) output += `ERROR:\n${error.message}\n`;
+              if (!output)
+                output = "Command executed successfully with no output.";
+              resolvePromise(output);
+            },
+          );
+        });
+        return { content: [{ type: "text", text: trimOutput(result) }] };
+      } catch (e) {
+        return { isError: true, content: [{ type: "text", text: e.message }] };
+      }
+    }
+
+    if (request.params.name === "system_read_file") {
+      const args = request.params.arguments || {};
+      try {
+        const content = readFileSync(args.path, "utf-8");
+        return { content: [{ type: "text", text: trimOutput(content) }] };
+      } catch (e) {
+        return { isError: true, content: [{ type: "text", text: e.message }] };
+      }
+    }
+
+    if (request.params.name === "system_write_file") {
+      const args = request.params.arguments || {};
+      try {
+        writeFileSync(args.path, args.content, "utf-8");
+        return {
+          content: [
+            { type: "text", text: `Successfully wrote to ${args.path}` },
+          ],
+        };
+      } catch (e) {
+        return { isError: true, content: [{ type: "text", text: e.message }] };
+      }
+    }
+
     if (request.params.name === "db_sql_query") {
       const args = request.params.arguments || {};
       try {
@@ -694,14 +804,28 @@ export function createMcpServerInstance() {
           });
         }
 
+        // Save to public/screenshots/ so remote AI clients (ChatGPT) can view
+        // the image via a URL.  Local clients still get the inline image block.
+        let screenshotUrl = null;
+        try {
+          const saved = saveScreenshot(res.data);
+          screenshotUrl = saved.url;
+        } catch (saveErr) {
+          console.error("[Screenshot] Failed to save file:", saveErr.message);
+        }
+
+        const captionBase =
+          "Screenshot captured" +
+          (args.annotate ? " with Set-of-Mark annotations" : "");
+        const captionUrl = screenshotUrl
+          ? `\nView screenshot: ${screenshotUrl}`
+          : "";
+
         return {
           content: [
             {
               type: "text",
-              text:
-                "Screenshot captured" +
-                (args.annotate ? " with Set-of-Mark annotations" : "") +
-                ":",
+              text: captionBase + captionUrl,
             },
             { type: "image", data: res.data, mimeType: "image/png" },
           ],
@@ -2353,8 +2477,6 @@ export function startMcpServer(app) {
   });
 }
 
-import { randomUUID } from "crypto";
-
 const wsUrls = new Map();
 
 cdpEvents.on("event", ({ event, params }) => {
@@ -2396,7 +2518,7 @@ cdpEvents.on("event", ({ event, params }) => {
 
     import("./db.js").then(({ addTrafficLog }) => {
       addTrafficLog({
-        id: randomUUID(),
+        id: _randomUUID(),
         phase: isSent ? "WebSocket:Sent" : "WebSocket:Received",
         method: isSent ? "WSS_SEND" : "WSS_RECV",
         url: url,

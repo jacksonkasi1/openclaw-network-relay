@@ -53,7 +53,7 @@ async function getMcpClient() {
 
     const client = new Client(
       { name: "openclaw-gpt-bridge", version: "1.0.0" },
-      { capabilities: {} }
+      { capabilities: {} },
     );
     await client.connect(clientTransport);
 
@@ -114,6 +114,7 @@ export function generateOpenApiSchema(baseUrl) {
       "/api/gpt/tools": {
         get: {
           operationId: "listMcpTools",
+          "x-openai-isConsequential": false,
           summary: "List all available MCP tools",
           description:
             "Returns every MCP tool this server exposes, including names, " +
@@ -121,7 +122,7 @@ export function generateOpenApiSchema(baseUrl) {
             "discover what tools are available before calling /api/gpt/tool.",
           security: [{ BearerAuth: [] }],
           responses: {
-            "200": {
+            200: {
               description: "Array of tool descriptors",
               content: {
                 "application/json": {
@@ -144,14 +145,17 @@ export function generateOpenApiSchema(baseUrl) {
                 },
               },
             },
-            "401": { description: "Unauthorized — invalid or missing Bearer token" },
-            "503": { description: "GPT_API_KEY not configured on the server" },
+            401: {
+              description: "Unauthorized — invalid or missing Bearer token",
+            },
+            503: { description: "GPT_API_KEY not configured on the server" },
           },
         },
       },
       "/api/gpt/tool": {
         post: {
           operationId: "callMcpTool",
+          "x-openai-isConsequential": false,
           summary: "Execute an MCP tool by name",
           description:
             "Calls a specific MCP tool with the supplied arguments and returns " +
@@ -184,7 +188,7 @@ export function generateOpenApiSchema(baseUrl) {
             },
           },
           responses: {
-            "200": {
+            200: {
               description: "Tool execution result",
               content: {
                 "application/json": {
@@ -206,7 +210,8 @@ export function generateOpenApiSchema(baseUrl) {
                             text: { type: "string" },
                             data: {
                               type: "string",
-                              description: "Base-64 encoded data for image content",
+                              description:
+                                "Base-64 encoded data for image content",
                             },
                             mimeType: { type: "string" },
                           },
@@ -223,12 +228,14 @@ export function generateOpenApiSchema(baseUrl) {
                 },
               },
             },
-            "400": {
+            400: {
               description: "Bad request — 'name' field is missing",
             },
-            "401": { description: "Unauthorized — invalid or missing Bearer token" },
-            "500": { description: "Tool execution failed unexpectedly" },
-            "503": { description: "GPT_API_KEY not configured on the server" },
+            401: {
+              description: "Unauthorized — invalid or missing Bearer token",
+            },
+            500: { description: "Tool execution failed unexpectedly" },
+            503: { description: "GPT_API_KEY not configured on the server" },
           },
         },
       },
@@ -262,8 +269,7 @@ export function createGptRouter() {
   // The server URL embedded in the schema always reflects the live tunnel address.
   router.get("/openapi.json", (_req, res) => {
     const port = parseInt(process.env.PORT || "31337", 10);
-    const baseUrl =
-      global.publicUrl || `http://localhost:${port}`;
+    const baseUrl = global.publicUrl || `http://localhost:${port}`;
     res.json(generateOpenApiSchema(baseUrl));
   });
 
@@ -306,7 +312,10 @@ export function createGptRouter() {
       });
     }
 
-    console.error(`[GPT] callTool → ${name}`, JSON.stringify(args).slice(0, 200));
+    console.error(
+      `[GPT] callTool → ${name}`,
+      JSON.stringify(args).slice(0, 200),
+    );
 
     try {
       const client = await getMcpClient();
