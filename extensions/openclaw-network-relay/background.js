@@ -1,6 +1,7 @@
 const DEFAULT_ENDPOINT = "http://127.0.0.1:31337/log";
 const DEBUGGER_VERSION = "1.3";
 const DECISION_TIMEOUT_MS = 20000;
+const DEBUG_RULES = true; // Set to false in production - controls verbose logging for rule sync
 
 // MANIFEST V3 KEEPALIVE — TWO LAYERS
 // 1. setInterval pings Chrome every 20s to keep a LIVE SW alive.
@@ -70,6 +71,7 @@ function isSecureEndpoint(value) {
         ["127.0.0.1", "localhost"].includes(url.hostname))
     );
   } catch {
+    if (DEBUG_RULES) console.log("[OpenClaw] isSecureEndpoint failed for:", value);
     return false;
   }
 }
@@ -125,20 +127,33 @@ async function syncRules() {
   if (state.ruleSyncInFlight) return;
   state.ruleSyncInFlight = true;
 
-  if (!isSecureEndpoint(state.endpoint)) {
-    state.ruleSyncInFlight = false;
-    return;
+  // Use endpoint or fallback to default
+  let endpointToUse = state.endpoint || DEFAULT_ENDPOINT;
+  
+  if (!isSecureEndpoint(endpointToUse)) {
+    if (DEBUG_RULES) console.log("[OpenClaw] syncRules: endpoint not secure, trying default");
+    endpointToUse = DEFAULT_ENDPOINT;
   }
 
   try {
-    const rulesUrl = new URL(state.endpoint);
+    const rulesUrl = new URL(endpointToUse);
     rulesUrl.pathname = "/rules";
     const res = await fetch(rulesUrl.href);
     if (res.ok) {
       const nextRules = await res.json();
-      if (Array.isArray(nextRules)) state.rules = nextRules;
+      if (Array.isArray(nextRules)) {
+        state.rules = nextRules;
+        // Always log rule count - important for debugging
+        console.log("[OpenClaw] Rules synced:", state.rules.length, "rules from MCP server");
+        if (DEBUG_RULES) {
+          state.rules.forEach((r, i) => console.log(`  [${i}] ${r.name} -> ${r.urlPattern}`));
+        }
+      }
+    } else {
+      if (DEBUG_RULES) console.log("[OpenClaw] syncRules: HTTP", res.status);
     }
   } catch (e) {
+    console.error("[OpenClaw] syncRules error:", e?.message || String(e));
   } finally {
     state.ruleSyncInFlight = false;
   }
@@ -326,6 +341,7 @@ async function sendCdpResult(id, result, error) {
 }
 
 function startRuleSync() {
+  if (DEBUG_RULES) console.log("[OpenClaw] startRuleSync: enabled =", state.enabled);
   if (state.ruleSyncInterval) clearInterval(state.ruleSyncInterval);
   state.ruleSyncInFlight = false;
   void syncRules();
@@ -341,8 +357,19 @@ function stopRuleSync() {
   state.rules = [];
 }
 
+let _warnedNoRules = false;
+
 function evaluateRules(payload, phase) {
-  if (!state.rules || state.rules.length === 0) return null;
+  if (!state.rules || state.rules.length === 0) {
+    if (!_warnedNoRules && DEBUG_RULES) {
+      console.log("[OpenClaw] evaluateRules: no rules loaded yet");
+      _warnedNoRules = true;
+    }
+    return null;
+  }
+  // Reset warning when rules are available
+  _warnedNoRules = false;
+  
   for (const rule of state.rules) {
     if (rule.phase && rule.phase !== phase && rule.phase !== "both") continue;
     if (
@@ -351,6 +378,7 @@ function evaluateRules(payload, phase) {
     )
       continue;
     if (rule.urlPattern && !payload.url.includes(rule.urlPattern)) continue;
+    if (DEBUG_RULES) console.log("[OpenClaw] MATCHED rule:", rule.name, "->", payload.url);
     return rule;
   }
   return null;
@@ -384,11 +412,11 @@ async function detachFromTab(tabId) {
 }
 
 async function attachToTab(tabId) {
+  if (DEBUG_RULES) console.log("[OpenClaw] attachToTab:", tabId);
   if (tabId == null) throw new Error("No target tab selected");
   if (!state.attachedTabIds.includes(tabId)) {
     // We are no longer detaching from other tabs because we support multiple tabs now.
   }
-  // Remove the early return so the interval starts even if tabId matches
 
   try {
     await chrome.debugger.attach(targetForTab(tabId), DEBUGGER_VERSION);
@@ -419,6 +447,8 @@ async function attachToTab(tabId) {
   if (!state.attachedTabIds.includes(tabId)) {
     state.attachedTabIds.push(tabId);
   }
+  // Always log successful attachment - important for debugging
+  console.log("[OpenClaw] Tab attached:", tabId, "- rules syncing every 2s");
   startRuleSync();
   startCommandStream();
   ensureWorkerAlive();
@@ -719,8 +749,16 @@ async function handleResponsePause(tabId, params) {
     timestamp: Date.now(),
   };
 
+  // Debug: Log rule state before evaluation
+  if (DEBUG_RULES) {
+    console.log("[OpenClaw] Response for:", params.request.url);
+    console.log("[OpenClaw] Rules in state:", state.rules ? state.rules.length : 0);
+  }
+
   const matchedRule = evaluateRules(payload, "response");
   if (matchedRule) {
+    // Always log when a rule is applied - this is important for debugging
+    console.log("[OpenClaw] RULE APPLIED:", matchedRule.name, "->", params.request.url);
     payload.appliedRule = matchedRule.name || matchedRule.id;
     fireAndForgetLog(payload);
 
@@ -732,6 +770,7 @@ async function handleResponsePause(tabId, params) {
       return;
     }
     if (matchedRule.action === "modify") {
+      if (DEBUG_RULES) console.log("[OpenClaw] Modifying response body");
       let responseHeaders = matchedRule.modifiedResponseHeaders
         ? headerObjectToArray(matchedRule.modifiedResponseHeaders)
         : [...(params.responseHeaders || [])];
@@ -752,6 +791,7 @@ async function handleResponsePause(tabId, params) {
         responseHeaders,
         body: responseBodyForFulfill || "",
       });
+      if (DEBUG_RULES) console.log("[OpenClaw] Response modification complete");
       return;
     }
     await continueResponse(tabId, params.requestId, params, responseBodyBase64);
@@ -855,6 +895,12 @@ chrome.runtime.onStartup.addListener(() => {
 });
 
 loadSettings();
+// Always log on startup - important for debugging
+console.log("[OpenClaw] Extension loaded - MCP bridge endpoint:", DEFAULT_ENDPOINT);
+
+// Start rule syncing immediately on extension load - don't wait for tab attachment
+// This ensures rules are ready before any tab is attached
+startRuleSync();
 
 async function sendCdpEvent(event, params) {
   if (!isSecureEndpoint(state.endpoint)) return;
